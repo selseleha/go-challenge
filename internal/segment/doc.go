@@ -8,6 +8,7 @@
 //     gRPC is preferred for ingest because USS is a service-to-service producer;
 //     protobuf contracts are explicit and streaming can be added later if volume grows.
 //
-// This package currently exposes only inbound ports (Estimator, Ingester). Domain
-// logic, use cases, and outbound adapters are intentionally not implemented yet.
+// Core types: Membership (with a two-week TTL), Clock, Repository, and Service
+// (implements Ingester and Estimator). Outbound persistence starts with
+// adapter/memory; swap the Repository implementation without changing adapters.
 package segment

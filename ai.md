@@ -65,3 +65,22 @@
 - **Result:** Added HTTP estimate and gRPC ingest adapters, ports, protobuf, and tests. `go test ./...` passed.
 - **Evaluation:** [Add how you reviewed the API contracts and tests.]
 - **Fixes:** [Add any changes made, if applicable.]
+
+### Prompt #4
+
+- **Stage:** Implementation
+- **Tool:** Cursor (Auto)
+- **Prompt:**
+
+  ```
+  Next step: domain + use cases.
+  - Membership with 2-week expiry (inject Clock)
+  - Ingest and Estimate services
+  - In-memory repository
+  - Wire HTTP and gRPC in cmd
+  Follow TDD. No Postgres yet.
+  ```
+
+- **Result:** Added Membership/TTL, Service, memory repository, and `cmd/estimator`. `go test ./...` passed.
+- **Evaluation:** [Add how you reviewed the behaviour and tests.]
+- **Fixes:** [Add any changes made, if applicable.]
