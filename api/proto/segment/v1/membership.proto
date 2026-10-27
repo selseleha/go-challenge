@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package segment.v1;
+
+option go_package = "github.com/selseleha/go-challenge/internal/segment/adapter/grpc/gen;gen";
+
+// MembershipService receives user-segment activity from USS.
+service MembershipService {
+  // Ingest records that a user was tagged with a segment.
+  rpc Ingest(IngestRequest) returns (IngestResponse);
+}
+
+message IngestRequest {
+  string user_id = 1;
+  string segment = 2;
+}
+
+message IngestResponse {}

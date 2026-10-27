@@ -46,3 +46,22 @@
 - **Result:** Created empty directories: `cmd/estimator`, `internal/segment`, `internal/segment/adapter/http`, `internal/segment/adapter/memory`.
 - **Evaluation:** [Add how you reviewed the structure.]
 - **Fixes:** First AI output used layer folders (`domain/`, `application/`, `ports/`, `adapters/...`, `tests/`). Corrected via a DDD package-by-domain rule and rebuilt the tree under `internal/segment/`.
+
+### Prompt #3
+
+- **Stage:** Implementation
+- **Tool:** Cursor (Auto)
+- **Prompt:**
+
+  ```
+  Implement only the API layer:
+  - gRPC for receiving user-segment activity from USS (with protobuf)
+  - REST/JSON for estimating users in a segment
+  - Thin handlers, interfaces for DI, no business logic
+  - Tests for routing, validation, and errors
+  - Follow TDD and project rules; do not implement domain, DB, or other layers
+  ```
+
+- **Result:** Added HTTP estimate and gRPC ingest adapters, ports, protobuf, and tests. `go test ./...` passed.
+- **Evaluation:** [Add how you reviewed the API contracts and tests.]
+- **Fixes:** [Add any changes made, if applicable.]
