@@ -84,3 +84,18 @@
 - **Result:** Added Membership/TTL, Service, memory repository, and `cmd/estimator`. `go test ./...` passed.
 - **Evaluation:** [Add how you reviewed the behaviour and tests.]
 - **Fixes:** [Add any changes made, if applicable.]
+
+### Prompt #5
+
+- **Stage:** Testing
+- **Tool:** Cursor (Auto)
+- **Prompt:**
+
+  ```
+  Write a simple main that acts like USS: send random user-segment data to ES over gRPC.
+  One file is enough. Use goroutines for speed if it helps.
+  ```
+
+- **Result:** Added `cmd/uss/main.go` (worker pool, random ingest, ok/err stats).
+- **Evaluation:** [Add how you tried it against estimator.]
+- **Fixes:** [Add any changes made, if applicable.]
