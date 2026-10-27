@@ -99,3 +99,18 @@
 - **Result:** Added `cmd/uss/main.go` (worker pool, random ingest, ok/err stats).
 - **Evaluation:** [Add how you tried it against estimator.]
 - **Fixes:** [Add any changes made, if applicable.]
+
+### Prompt #6
+
+- **Stage:** Implementation
+- **Tool:** Cursor (Auto)
+- **Prompt:**
+
+  ```
+  Add Redis behind the same Repository (real persistence + TTL).
+  Keep memory as an option. Add docker-compose to make running easier.
+  ```
+
+- **Result:** Added Redis sorted-set adapter, `STORE=memory|redis` wiring, Dockerfile, and docker-compose. Tests with miniredis passed.
+- **Evaluation:** [Add how you reviewed Redis behaviour and compose.]
+- **Fixes:** [Add any changes made, if applicable.]

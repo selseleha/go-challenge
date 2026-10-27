@@ -11,16 +11,18 @@ import (
 	"syscall"
 	"time"
 
+	goredis "github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 
 	"github.com/selseleha/go-challenge/internal/segment"
 	segmentgrpc "github.com/selseleha/go-challenge/internal/segment/adapter/grpc"
 	segmenthttp "github.com/selseleha/go-challenge/internal/segment/adapter/http"
 	"github.com/selseleha/go-challenge/internal/segment/adapter/memory"
+	segmentredis "github.com/selseleha/go-challenge/internal/segment/adapter/redis"
 )
 
 func main() {
-	repo := memory.NewRepository()
+	repo := newRepository()
 	svc := segment.NewService(repo, segment.SystemClock{})
 
 	httpAddr := envOr("HTTP_ADDR", ":8080")
@@ -66,6 +68,26 @@ func main() {
 		grpcServer.GracefulStop()
 	case err := <-errCh:
 		log.Fatalf("server error: %v", err)
+	}
+}
+
+func newRepository() segment.Repository {
+	store := envOr("STORE", "memory")
+	switch store {
+	case "memory":
+		log.Print("store: memory")
+		return memory.NewRepository()
+	case "redis":
+		addr := envOr("REDIS_ADDR", "localhost:6379")
+		client := goredis.NewClient(&goredis.Options{Addr: addr})
+		if err := client.Ping(context.Background()).Err(); err != nil {
+			log.Fatalf("redis ping %s: %v", addr, err)
+		}
+		log.Printf("store: redis (%s)", addr)
+		return segmentredis.NewRepository(client)
+	default:
+		log.Fatalf("unknown STORE %q (want memory or redis)", store)
+		return nil
 	}
 }
 

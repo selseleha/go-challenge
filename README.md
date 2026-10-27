@@ -8,13 +8,16 @@ A user stays in a segment for **two weeks** after being tagged; expired membersh
 ## Quick start
 
 ```bash
-# terminal 1 — Estimation Service
-go run ./cmd/estimator
+# full stack (Redis + estimator)
+docker compose up --build
 
-# terminal 2 — USS simulator (random ingest)
+# or locally without Docker for the app
+go run ./cmd/estimator                                    # memory
+STORE=redis REDIS_ADDR=localhost:6379 go run ./cmd/estimator  # needs: docker compose up redis -d
+
+# USS simulator (host → compose-published gRPC)
 go run ./cmd/uss
 
-# estimate
 curl -s localhost:8080/v1/segments/sports/estimate
 ```
 
@@ -22,6 +25,8 @@ curl -s localhost:8080/v1/segments/sports/estimate
 |-----|---------|---------|
 | `HTTP_ADDR` | `:8080` | estimator (REST) |
 | `GRPC_ADDR` | `:9090` / `localhost:9090` | estimator (listen) / uss (dial) |
+| `STORE` | `memory` | estimator (`memory` or `redis`) |
+| `REDIS_ADDR` | `localhost:6379` | estimator when `STORE=redis` |
 | `WORKERS` | `8` | uss |
 | `EVENTS` | `1000` | uss |
 
@@ -58,8 +63,9 @@ GET /v1/segments/{segment}/estimate
 | **gRPC for ingest** | Service-to-service from USS; explicit protobuf contract; easy to add streaming later under load |
 | **REST for estimate** | Simple read; easy to call with curl/browser; cache-friendly |
 | **Hexagonal + package-by-domain** | `internal/segment` owns model, ports, service; adapters under `adapter/{http,grpc,memory}` |
-| **In-memory store (for now)** | Fast local/dev path behind `Repository`; can swap Redis/Postgres without touching HTTP/gRPC |
-| **Storage shape** `segment → userID → taggedAt` | Ingest O(1); estimate scans one segment only — fits “millions of users, hundreds of segments” |
+| **`STORE=memory` or `redis`** | Same `Repository` port; swap at composition root without touching HTTP/gRPC/domain |
+| **Redis sorted set** `segment:{name}` score=`taggedAt` | Ingest `ZADD`; estimate `ZCOUNT` + prune expired with `ZREMRANGEBYSCORE` — fits two-week TTL and per-segment scale |
+| **Why Redis over Postgres here** | Memberships are ephemeral; score-range counts beat scanning relational rows for this access pattern |
 | **Injected `Clock`** | Two-week expiry is unit-testable without sleeping |
 | **TDD** | Behaviour covered next to the code (`*_test.go`) |
 
@@ -75,6 +81,7 @@ internal/segment/       # domain + ports + service
   adapter/http/         # REST estimate
   adapter/grpc/         # gRPC ingest (+ gen/)
   adapter/memory/       # in-memory repository
+  adapter/redis/        # Redis sorted-set repository
 ```
 
 ## AI usage
