@@ -1,0 +1,43 @@
+---
+description: Enforce Test-Driven Development (Red-Green-Refactor) for all code changes
+alwaysApply: true
+---
+
+# Test-Driven Development
+
+Every behavior change follows **Red → Green → Refactor**. Never write production code without a failing test that demands it.
+
+1. **Red**: Write the smallest test describing the next behavior. Run it and confirm it fails for the expected reason.
+2. **Green**: Write the minimum production code to make it pass. No speculative features.
+3. **Refactor**: Clean up code and tests while all tests stay green.
+
+## Rules
+
+- Run `go test ./...` after each step and report the result; do not claim green without running it.
+- One behavior per cycle. Keep cycles small.
+- Bug fix = first a test that reproduces the bug, then the fix.
+- Test domain and application services in isolation using fakes/stubs of ports (no DB, network, or clock).
+- Inject time (`Clock` port) instead of calling `time.Now()` in domain/application code, so expiry logic is testable.
+- Adapter tests (DB, HTTP) are integration tests; mark them with a build tag `//go:build integration`.
+- Use table-driven tests and `t.Run` subtests; name tests `Test<Unit>_<Behavior>`.
+- Test via public behavior, not private implementation details.
+
+```go
+func TestEstimator_Estimate(t *testing.T) {
+	tests := []struct {
+		name string
+		seed []domain.Membership
+		want int
+	}{
+		{name: "empty segment returns zero", want: 0},
+		{name: "expired memberships are not counted", seed: expired, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) { /* arrange, act, assert */ })
+	}
+}
+```
+
+## Commit cadence
+
+Commit at meaningful TDD points (see conventional-commits rule), e.g. `test: ...` for a new failing spec when useful, `feat: ...` once green, `refactor: ...` after cleanup.

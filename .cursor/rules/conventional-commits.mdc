@@ -1,0 +1,38 @@
+---
+description: Always use single-line Conventional Commits messages
+alwaysApply: true
+---
+
+# Conventional Commits (single line)
+
+Every commit message is exactly **one line** in the format:
+
+```
+<type>(<optional scope>): <description>
+```
+
+## Rules
+
+- Single line only: no body, no footer, no trailers (no `Co-authored-by`, no `Signed-off-by`).
+- Allowed types: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`, `build`, `ci`, `perf`, `style`, `revert`.
+- Scope (optional) is the affected area: `domain`, `app`, `http`, `repo`, `cmd`, etc.
+- Description: imperative mood, lowercase start, no trailing period, max ~72 chars total.
+- Breaking change: add `!` after type/scope, e.g. `feat(http)!: change ingest payload shape`.
+- Commit small, focused changes often; one logical change per commit.
+- Use `git commit -m "<message>"` with a single `-m` only.
+
+## Examples
+
+```
+✅ test(domain): add failing test for membership expiry after two weeks
+✅ feat(app): implement segment estimation use case
+✅ feat(http): add POST /memberships inbound adapter
+✅ refactor(repo): extract ttl calculation into helper
+✅ docs: explain choice of REST for ingestion
+
+❌ Added estimation feature.
+❌ feat: Implement Estimator
+❌ fix: bug fix
+
+   Detailed body lines...
+```

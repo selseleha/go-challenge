@@ -1,0 +1,17 @@
+---
+description: Project context and constraints for the Go estimation-service challenge
+alwaysApply: true
+---
+
+# Project Context
+
+Estimation Service (ES): ingests `(user_id, segment)` pairs from USS and answers "how many users are in segment X?".
+
+- A user counts in a segment only for **two weeks** after being tagged; expired memberships must not be counted.
+- Must scale to millions of users and hundreds of segments; justify data structures and storage choices.
+- Document design decisions in code comments and docs (why REST/gRPC, why a given store, trade-offs).
+- Unit tests are a first-class deliverable.
+
+## Hard constraint
+
+- **Never create or edit `ai.md`.** The author writes it entirely by hand. `sample.ai.md` is a template only; do not modify it either.

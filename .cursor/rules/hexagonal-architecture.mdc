@@ -1,0 +1,44 @@
+---
+description: Hexagonal (Ports & Adapters) architecture boundaries and package layout for Go code
+alwaysApply: true
+---
+
+# Hexagonal Architecture (Ports & Adapters)
+
+Dependencies always point **inward**: adapters → application → domain. The core never knows about HTTP, gRPC, databases, or frameworks.
+
+## Layout
+
+```
+cmd/<app>/main.go            # composition root: wires adapters into ports
+internal/domain/             # entities, value objects, domain errors; pure Go, stdlib only
+internal/application/        # use cases (services); depends only on domain + ports
+internal/ports/              # interfaces: inbound (use cases) & outbound (repos, clock)
+internal/adapters/inbound/   # HTTP/gRPC handlers -> call inbound ports
+internal/adapters/outbound/  # repo implementations (memory, redis, postgres...)
+```
+
+## Rules
+
+- `domain` imports nothing from the project except itself; no third-party libs.
+- `application` imports only `domain` and `ports`; never an adapter package.
+- Adapters implement ports; inbound adapters depend on inbound port interfaces, not concrete services.
+- Define outbound port interfaces from the core's needs (small, consumer-side interfaces).
+- DTOs/transport models live in adapters; map them to domain types at the boundary. Never leak JSON/DB tags into `domain`.
+- Wiring (constructors, config, DI) happens only in `cmd/`.
+- Pass `context.Context` as the first parameter of port methods that do I/O.
+
+```go
+// ❌ BAD: application depends on a concrete adapter
+import "go-challenge/internal/adapters/outbound/redis"
+type Service struct{ repo *redis.Repo }
+
+// ✅ GOOD: application depends on a port
+type Service struct {
+	repo  ports.MembershipRepository
+	clock ports.Clock
+}
+```
+
+- When adding a feature: domain/port first (with tests), then application service, then adapter.
+- Explain non-obvious architecture decisions in package doc comments (`doc.go`).
