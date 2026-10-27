@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"google.golang.org/grpc"
@@ -42,6 +43,9 @@ func (s *Server) Ingest(ctx context.Context, req *gen.IngestRequest) (*gen.Inges
 	}
 
 	if err := s.ingester.Ingest(ctx, userID, name); err != nil {
+		if errors.Is(err, segment.ErrNotReady) {
+			return nil, status.Error(codes.Unavailable, err.Error())
+		}
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 	return &gen.IngestResponse{}, nil

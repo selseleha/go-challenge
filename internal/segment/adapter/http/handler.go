@@ -2,22 +2,42 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/selseleha/go-challenge/internal/segment"
 )
 
-// Handler is the inbound HTTP adapter for segment estimation.
+// Handler is the inbound HTTP adapter for estimate, health, and admin reset.
 type Handler struct {
 	estimator segment.Estimator
+	health    segment.HealthChecker
+	resetter  segment.Resetter
+	adminTok  string
 	mux       *http.ServeMux
 }
 
-// NewHandler wires an Estimator into the REST estimate routes.
-func NewHandler(estimator segment.Estimator) *Handler {
-	h := &Handler{estimator: estimator, mux: http.NewServeMux()}
+// Deps groups inbound ports for the HTTP adapter.
+type Deps struct {
+	Estimator  segment.Estimator
+	Health     segment.HealthChecker
+	Resetter   segment.Resetter
+	AdminToken string
+}
+
+// NewHandler wires REST routes.
+func NewHandler(d Deps) *Handler {
+	h := &Handler{
+		estimator: d.Estimator,
+		health:    d.Health,
+		resetter:  d.Resetter,
+		adminTok:  d.AdminToken,
+		mux:       http.NewServeMux(),
+	}
 	h.mux.HandleFunc("GET /v1/segments/{segment}/estimate", h.estimate)
+	h.mux.HandleFunc("GET /v1/health", h.healthCheck)
+	h.mux.HandleFunc("POST /v1/admin/reset", h.reset)
 	return h
 }
 
@@ -31,7 +51,18 @@ type estimateResponse struct {
 }
 
 type errorResponse struct {
-	Error string `json:"error"`
+	Error  string `json:"error"`
+	Status string `json:"status,omitempty"`
+}
+
+type healthResponse struct {
+	Status string `json:"status"`
+	Store  string `json:"store"`
+}
+
+type resetResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
 }
 
 func (h *Handler) estimate(w http.ResponseWriter, r *http.Request) {
@@ -43,11 +74,71 @@ func (h *Handler) estimate(w http.ResponseWriter, r *http.Request) {
 
 	count, err := h.estimator.Estimate(r.Context(), name)
 	if err != nil {
+		if errors.Is(err, segment.ErrNotReady) {
+			writeJSON(w, http.StatusServiceUnavailable, errorResponse{
+				Error:  err.Error(),
+				Status: segment.StatusResetting,
+			})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "internal server error"})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, estimateResponse{Segment: name, Count: count})
+}
+
+func (h *Handler) healthCheck(w http.ResponseWriter, r *http.Request) {
+	info := h.health.Health(r.Context())
+	code := http.StatusOK
+	if info.Status != segment.StatusReady {
+		code = http.StatusServiceUnavailable
+	}
+	writeJSON(w, code, healthResponse{Status: info.Status, Store: info.Store})
+}
+
+func (h *Handler) reset(w http.ResponseWriter, r *http.Request) {
+	if !h.authorized(r) {
+		writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "unauthorized"})
+		return
+	}
+
+	err := h.resetter.Reset(r.Context())
+	switch {
+	case errors.Is(err, segment.ErrResetInProgress):
+		writeJSON(w, http.StatusConflict, errorResponse{
+			Error:  err.Error(),
+			Status: segment.StatusResetting,
+		})
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "reset failed"})
+	default:
+		info := h.health.Health(r.Context())
+		msg := "hot store cleared"
+		if info.Status == segment.StatusResetting {
+			msg = "hot store cleared; reloading from postgres asynchronously"
+		}
+		code := http.StatusOK
+		if info.Status == segment.StatusResetting {
+			code = http.StatusAccepted
+		}
+		writeJSON(w, code, resetResponse{Status: info.Status, Message: msg})
+	}
+}
+
+func (h *Handler) authorized(r *http.Request) bool {
+	if h.adminTok == "" {
+		return false
+	}
+	if t := r.Header.Get("X-Admin-Token"); t != "" && t == h.adminTok {
+		return true
+	}
+	const prefix = "Bearer "
+	auth := r.Header.Get("Authorization")
+	if strings.HasPrefix(auth, prefix) && strings.TrimPrefix(auth, prefix) == h.adminTok {
+		return true
+	}
+	return false
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

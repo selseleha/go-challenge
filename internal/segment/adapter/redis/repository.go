@@ -37,6 +37,15 @@ func (r *Repository) Upsert(ctx context.Context, m segment.Membership) error {
 	}).Err()
 }
 
+// Flush implements segment.HotStoreControl (and clears the Redis DB).
+func (r *Repository) Flush(ctx context.Context) error {
+	return r.client.FlushDB(ctx).Err()
+}
+
+func (r *Repository) WarmFromSource(context.Context, time.Time) error { return nil }
+
+func (r *Repository) AsyncWarm() bool { return false }
+
 func (r *Repository) CountActive(ctx context.Context, name string, now time.Time) (int64, error) {
 	k := key(name)
 	minActive := now.Add(-r.ttl).UTC().UnixNano()

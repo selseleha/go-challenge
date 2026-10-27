@@ -129,3 +129,38 @@
 - **Result:** Added `internal/config`, `.env.example`, injected TTL into memory/redis repos, wired estimator and uss to config.
 - **Evaluation:** [Add how you reviewed the config keys.]
 - **Fixes:** [Add any changes made, if applicable.]
+
+### Prompt #8
+
+- **Stage:** Implementation
+- **Tool:** Cursor (Auto)
+- **Prompt:**
+
+  ```
+  For postgres+redis, add config flags to flush Redis on startup and warm it from Postgres.
+  Also support choosing store mode from config.
+  ```
+
+- **Result:** Added `STORE=postgres_redis`, transactional outbox, `REDIS_FLUSH_ON_START` / `REDIS_WARM_ON_START`.
+- **Evaluation:** [Add how you reviewed boot flush/warm.]
+- **Fixes:** [Add any changes made, if applicable.]
+
+### Prompt #9
+
+- **Stage:** Refactoring
+- **Tool:** Cursor (Auto)
+- **Prompt:**
+
+  ```
+  Undo the boot flush/warm flags from the previous prompt — they make startup slow and can serve wrong counts.
+
+  Instead:
+  - remove REDIS_FLUSH_ON_START and REDIS_WARM_ON_START
+  - add POST /v1/admin/reset (token from config)
+  - add GET /v1/health
+  - while resetting, estimate must return a clear 503, not a wrong number
+  ```
+
+- **Result:** Boot flags removed. Added health + admin reset with readiness gating (`ready` / `resetting`).
+- **Evaluation:** [Add how you verified 503 during reset.]
+- **Fixes:** [Add any changes made, if applicable.]

@@ -12,7 +12,8 @@ import (
 func TestService_Estimate_ExcludesExpiredMemberships(t *testing.T) {
 	now := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	repo := memory.NewRepository(segment.DefaultMembershipTTL)
-	svc := segment.NewService(repo, segment.FixedClock{T: now.Add(-segment.DefaultMembershipTTL)})
+	ready := segment.NewReadiness()
+	svc := segment.NewService(repo, segment.FixedClock{T: now.Add(-segment.DefaultMembershipTTL)}, ready, repo, "memory")
 
 	ctx := context.Background()
 	if err := svc.Ingest(ctx, "old", "sports"); err != nil {
@@ -20,7 +21,7 @@ func TestService_Estimate_ExcludesExpiredMemberships(t *testing.T) {
 	}
 
 	// Advance clock: previous ingest is now exactly expired; new ingest is fresh.
-	svc = segment.NewService(repo, segment.FixedClock{T: now})
+	svc = segment.NewService(repo, segment.FixedClock{T: now}, ready, repo, "memory")
 	if err := svc.Ingest(ctx, "fresh", "sports"); err != nil {
 		t.Fatal(err)
 	}

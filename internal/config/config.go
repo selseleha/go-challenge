@@ -14,12 +14,18 @@ import (
 type Config struct {
 	HTTPAddr      string
 	GRPCAddr      string
-	Store         string // memory | redis
+	Store         string // memory | redis | postgres_redis
 	RedisAddr     string
+	DatabaseURL   string
 	MembershipTTL time.Duration
-	USSGRPCAddr   string
-	USSWorkers    int
-	USSEvents     int
+	AdminToken    string
+
+	OutboxPollInterval time.Duration
+	OutboxBatchSize    int
+
+	USSGRPCAddr string
+	USSWorkers  int
+	USSEvents   int
 }
 
 // Load reads optional .env then environment variables.
@@ -43,22 +49,38 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("USS_EVENTS: %w", err)
 	}
+	batch, err := envInt("OUTBOX_BATCH_SIZE", 100)
+	if err != nil {
+		return Config{}, fmt.Errorf("OUTBOX_BATCH_SIZE: %w", err)
+	}
+	poll, err := parseDuration(envOr("OUTBOX_POLL_INTERVAL", "2s"))
+	if err != nil {
+		return Config{}, fmt.Errorf("OUTBOX_POLL_INTERVAL: %w", err)
+	}
 
 	cfg := Config{
-		HTTPAddr:      envOr("HTTP_ADDR", ":8080"),
-		GRPCAddr:      envOr("GRPC_ADDR", ":9090"),
-		Store:         strings.ToLower(envOr("STORE", "memory")),
-		RedisAddr:     envOr("REDIS_ADDR", "localhost:6379"),
-		MembershipTTL: ttl,
-		USSGRPCAddr:   dialAddr(envOr("USS_GRPC_ADDR", envOr("GRPC_ADDR", "localhost:9090"))),
-		USSWorkers:    workers,
-		USSEvents:     events,
+		HTTPAddr:           envOr("HTTP_ADDR", ":8080"),
+		GRPCAddr:           envOr("GRPC_ADDR", ":9090"),
+		Store:              strings.ToLower(envOr("STORE", "memory")),
+		RedisAddr:          envOr("REDIS_ADDR", "localhost:6379"),
+		DatabaseURL:        envOr("DATABASE_URL", ""),
+		MembershipTTL:      ttl,
+		AdminToken:         envOr("ADMIN_TOKEN", "dev-admin-token"),
+		OutboxPollInterval: poll,
+		OutboxBatchSize:    batch,
+		USSGRPCAddr:        dialAddr(envOr("USS_GRPC_ADDR", envOr("GRPC_ADDR", "localhost:9090"))),
+		USSWorkers:         workers,
+		USSEvents:          events,
 	}
 
 	switch cfg.Store {
 	case "memory", "redis":
+	case "postgres_redis":
+		if cfg.DatabaseURL == "" {
+			return Config{}, fmt.Errorf("DATABASE_URL is required when STORE=postgres_redis")
+		}
 	default:
-		return Config{}, fmt.Errorf("STORE must be memory or redis, got %q", cfg.Store)
+		return Config{}, fmt.Errorf("STORE must be memory, redis, or postgres_redis, got %q", cfg.Store)
 	}
 	return cfg, nil
 }

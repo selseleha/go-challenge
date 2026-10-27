@@ -53,3 +53,15 @@ func (r *Repository) CountActive(_ context.Context, name string, now time.Time) 
 	}
 	return n, nil
 }
+
+// Flush implements segment.HotStoreControl for in-memory store.
+func (r *Repository) Flush(context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data = make(map[string]map[string]time.Time)
+	return nil
+}
+
+func (r *Repository) WarmFromSource(context.Context, time.Time) error { return nil }
+
+func (r *Repository) AsyncWarm() bool { return false }

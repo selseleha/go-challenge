@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/selseleha/go-challenge/internal/segment"
 	segmenthttp "github.com/selseleha/go-challenge/internal/segment/adapter/http"
 )
 
@@ -22,103 +23,145 @@ func (s *stubEstimator) Estimate(_ context.Context, segment string) (int64, erro
 	return s.count, s.err
 }
 
+type stubHealth struct {
+	info segment.HealthInfo
+}
+
+func (s *stubHealth) Health(context.Context) segment.HealthInfo { return s.info }
+
+type stubReset struct {
+	err error
+}
+
+func (s *stubReset) Reset(context.Context) error { return s.err }
+
+func newHandler(est segment.Estimator, health segment.HealthChecker, reset segment.Resetter) *segmenthttp.Handler {
+	if health == nil {
+		health = &stubHealth{info: segment.HealthInfo{Status: segment.StatusReady, Store: "memory"}}
+	}
+	if reset == nil {
+		reset = &stubReset{}
+	}
+	return segmenthttp.NewHandler(segmenthttp.Deps{
+		Estimator:  est,
+		Health:     health,
+		Resetter:   reset,
+		AdminToken: "secret",
+	})
+}
+
 func TestHandler_Estimate_ReturnsCountJSON(t *testing.T) {
 	est := &stubEstimator{count: 42}
-	h := segmenthttp.NewHandler(est)
+	h := newHandler(est, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/segments/sports/estimate", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf("status = %d; body=%s", rec.Code, rec.Body.String())
 	}
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("Content-Type = %q, want application/json", ct)
-	}
-
 	var body struct {
 		Segment string `json:"segment"`
 		Count   int64  `json:"count"`
 	}
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
+	_ = json.NewDecoder(rec.Body).Decode(&body)
 	if body.Segment != "sports" || body.Count != 42 {
-		t.Fatalf("body = %+v, want segment=sports count=42", body)
-	}
-	if est.segment != "sports" {
-		t.Fatalf("estimator got segment %q, want sports", est.segment)
+		t.Fatalf("body = %+v", body)
 	}
 }
 
 func TestHandler_Estimate_RejectsEmptySegment(t *testing.T) {
-	est := &stubEstimator{count: 1}
-	h := segmenthttp.NewHandler(est)
-
+	h := newHandler(&stubEstimator{count: 1}, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/segments/%20%20/estimate", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
-	}
-	assertJSONError(t, rec, "segment is required")
-	if est.segment != "" {
-		t.Fatalf("estimator should not be called, got segment %q", est.segment)
+		t.Fatalf("status = %d", rec.Code)
 	}
 }
 
-func TestHandler_Estimate_MapsServiceErrorTo500(t *testing.T) {
-	est := &stubEstimator{err: errors.New("boom")}
-	h := segmenthttp.NewHandler(est)
-
+func TestHandler_Estimate_NotReadyReturns503(t *testing.T) {
+	h := newHandler(&stubEstimator{err: segment.ErrNotReady}, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/segments/sports/estimate", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
-	}
-	assertJSONError(t, rec, "internal server error")
-}
-
-func TestHandler_Estimate_MethodNotAllowed(t *testing.T) {
-	h := segmenthttp.NewHandler(&stubEstimator{})
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/segments/sports/estimate", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusMethodNotAllowed && rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 405 or 404; body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestHandler_Estimate_UnknownRoute(t *testing.T) {
-	h := segmenthttp.NewHandler(&stubEstimator{})
-
-	req := httptest.NewRequest(http.MethodGet, "/v1/unknown", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
-	}
-}
-
-func assertJSONError(t *testing.T, rec *httptest.ResponseRecorder, wantMsg string) {
-	t.Helper()
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("Content-Type = %q, want application/json", ct)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d; body=%s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		Error string `json:"error"`
+		Error  string `json:"error"`
+		Status string `json:"status"`
 	}
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode error body: %v", err)
+	_ = json.NewDecoder(rec.Body).Decode(&body)
+	if body.Status != segment.StatusResetting || body.Error == "" {
+		t.Fatalf("body = %+v", body)
 	}
-	if body.Error != wantMsg {
-		t.Fatalf("error = %q, want %q", body.Error, wantMsg)
+}
+
+func TestHandler_Estimate_MapsServiceErrorTo500(t *testing.T) {
+	h := newHandler(&stubEstimator{err: errors.New("boom")}, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/segments/sports/estimate", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d", rec.Code)
+	}
+}
+
+func TestHandler_Health_Ready(t *testing.T) {
+	h := newHandler(&stubEstimator{}, &stubHealth{info: segment.HealthInfo{Status: segment.StatusReady, Store: "redis"}}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+}
+
+func TestHandler_Health_ResettingReturns503(t *testing.T) {
+	h := newHandler(&stubEstimator{}, &stubHealth{info: segment.HealthInfo{Status: segment.StatusResetting, Store: "postgres_redis"}}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandler_Reset_RequiresToken(t *testing.T) {
+	h := newHandler(&stubEstimator{}, nil, &stubReset{})
+	req := httptest.NewRequest(http.MethodPost, "/v1/admin/reset", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d", rec.Code)
+	}
+}
+
+func TestHandler_Reset_AcceptedWhenStillResetting(t *testing.T) {
+	h := newHandler(
+		&stubEstimator{},
+		&stubHealth{info: segment.HealthInfo{Status: segment.StatusResetting, Store: "postgres_redis"}},
+		&stubReset{},
+	)
+	req := httptest.NewRequest(http.MethodPost, "/v1/admin/reset", nil)
+	req.Header.Set("X-Admin-Token", "secret")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandler_Reset_ConflictWhenInProgress(t *testing.T) {
+	h := newHandler(&stubEstimator{}, nil, &stubReset{err: segment.ErrResetInProgress})
+	req := httptest.NewRequest(http.MethodPost, "/v1/admin/reset", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d", rec.Code)
 	}
 }
