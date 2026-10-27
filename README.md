@@ -1,56 +1,86 @@
-# How many users? (Go Challenge)
+# Estimation Service (Go Challenge)
 
-Suppose there is a "User Segmentation Service" (USS) that segments users based on their activities.
-For example, if a user visits sports news, USS classifies and tags "sport" to him.
-So we have a pair: (the user_id, and the segment) for example, (u104010, "sports").
+Answers: **how many users are in segment X?**  
+A user stays in a segment for **two weeks** after being tagged; expired memberships are not counted.
 
-We want to develop an Estimation Service (ES) that interacts with USS directly.
-ES receives the pair from USS as input and stores it.
-The responsibility of ES is to answer a simple query: "How many users exist on a specific segment?".
-For example, "how many users are in the sports segment?".
+![architecture](./Untitled%20Diagram.drawio.png)
 
-![](https://raw.githubusercontent.com/ArmanCreativeSolutions/go-challenge/main/Untitled%20Diagram.drawio.png?raw=true)
+## Quick start
 
-The query is simple, but two assumptions may make it a little challenging:
-- A specific user remains just two weeks on a segment. After that,
-we should not count "u104010" on the sports segment.
-- There are millions of users and hundreds of segments. So your solution(s) must be scalable
+```bash
+# terminal 1 — Estimation Service
+go run ./cmd/estimator
 
+# terminal 2 — USS simulator (random ingest)
+go run ./cmd/uss
 
-## Requirements
+# estimate
+curl -s localhost:8080/v1/segments/sports/estimate
+```
 
-- Implement a (REST API, RESTful API, soap, Graphql, RPC, gRPC, or whatever protocol you prefer)
-interface to receive data (user_id, segment pair) from USS. 
-- Implement a method to estimate the number of users in a specific segment. ( `func estimate(segment) -> number of users`)
+| Env | Default | Used by |
+|-----|---------|---------|
+| `HTTP_ADDR` | `:8080` | estimator (REST) |
+| `GRPC_ADDR` | `:9090` / `localhost:9090` | estimator (listen) / uss (dial) |
+| `WORKERS` | `8` | uss |
+| `EVENTS` | `1000` | uss |
 
-## Implementation details
+```bash
+go test ./...
+```
 
-Try to write your code as reusable and readable as possible.
-Also, don't forget to document your code and clear the reasons for all your decisions in the code.
+## API
 
-If your solution is not simple enough for implementing fast, you can just describe it in your documents.
+### Ingest (gRPC) — from USS
 
-Use any tools that you prefer just explain the reason of choices in your documents.
-For example explain why you choose REST API for receiving data.
+- Service: `segment.v1.MembershipService`
+- RPC: `Ingest({ user_id, segment }) → {}`
+- Proto: [`api/proto/segment/v1/membership.proto`](api/proto/segment/v1/membership.proto)
+- Invalid input → `InvalidArgument`
 
-It is more valuable to us that the project comes with unit tests.
+### Estimate (REST)
 
-Please fork this repository and add your code to that.
-Don't forget that your commits are so important.
-So be sure that you're committing your code often with a proper commit message.
+```http
+GET /v1/segments/{segment}/estimate
+```
 
+```json
+{"segment":"sports","count":42}
+```
 
-## We all use AI. Don't be ashamed
+- Empty segment → `400` `{"error":"segment is required"}`
+- Unexpected failure → `500`
 
-Everyone uses AI for everything. And we expect you to do the same. AI is a big part of our development process, and we care a lot about how you use AI tools during this task.
+## Design choices
 
-To earn our immunity after the AI takeover of Earth, we want to make sure you're using it properly.
+| Choice | Why |
+|--------|-----|
+| **gRPC for ingest** | Service-to-service from USS; explicit protobuf contract; easy to add streaming later under load |
+| **REST for estimate** | Simple read; easy to call with curl/browser; cache-friendly |
+| **Hexagonal + package-by-domain** | `internal/segment` owns model, ports, service; adapters under `adapter/{http,grpc,memory}` |
+| **In-memory store (for now)** | Fast local/dev path behind `Repository`; can swap Redis/Postgres without touching HTTP/gRPC |
+| **Storage shape** `segment → userID → taggedAt` | Ingest O(1); estimate scans one segment only — fits “millions of users, hundreds of segments” |
+| **Injected `Clock`** | Two-week expiry is unit-testable without sleeping |
+| **TDD** | Behaviour covered next to the code (`*_test.go`) |
 
-Add a file named "ai.md" to your project. This file should contain the following information (the more explicit, the better):
+Membership rule: active while `now - taggedAt < 14 days`. Re-ingest of the same user/segment refreshes the window.
 
-1. What AI tools and models did you use?
-2. Explain the different stages of software development where you used AI help. Describe how you used your tools at each stage.
-3. We want to know how you prompt. So add your prompts to this file too. For each prompt, explain which stage you used it in, how you evaluated the result, and what you did to fix any misbehavior.
-4 Explain how you monitor your token usage and what you do to manage it. Link your tools or add your helper prompts.
+## Layout
 
-*There's a sample.ai.md file in the project representing the expected template. Don't forget: "ai.md" is the only file we expect you to write entirely by yourself.*
+```
+cmd/estimator/          # wires adapters + starts HTTP & gRPC
+cmd/uss/                # load/simulator client
+api/proto/segment/v1/   # protobuf source
+internal/segment/       # domain + ports + service
+  adapter/http/         # REST estimate
+  adapter/grpc/         # gRPC ingest (+ gen/)
+  adapter/memory/       # in-memory repository
+```
+
+## AI usage
+
+See [`ai.md`](./ai.md). (`sample.ai.md` is the template only.)
+
+## Original challenge brief
+
+The upstream problem statement lives in git history / the fork source ([ArmanCreativeSolutions/go-challenge](https://github.com/ArmanCreativeSolutions/go-challenge)). This README focuses on the implemented solution.
