@@ -1,0 +1,25 @@
+---
+description: DDD-style package-by-domain layout; each domain owns its model, ports, services, adapters and colocated tests
+alwaysApply: true
+---
+
+# DDD: Package by Domain
+
+Organize code by **domain (bounded context)**, not by technical layer.
+
+- Each domain lives in its own package under `internal/<domain>/` and owns its entities, repository port, services, and adapters.
+- Tests sit **next to** the code they test (`service.go` + `service_test.go`).
+- No global layer folders like `services/`, `repositories/`, `models/`, or a central `tests/` full of unit tests.
+- Use the ubiquitous language of the domain in names (`Membership`, `Segment`, `Estimate`), not generic ones (`Manager`, `Helper`, `Data`).
+- Domains talk to each other only through exported ports/services, never through another domain's adapters.
+
+```
+✅ internal/segment/
+     membership.go       membership_test.go
+     repository.go       # port
+     service.go          service_test.go
+     adapter/memory/repository.go  repository_test.go
+
+❌ internal/services/   (every service in one folder)
+❌ tests/               (every unit test in one folder)
+```

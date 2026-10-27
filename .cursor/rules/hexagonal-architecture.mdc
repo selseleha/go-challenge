@@ -9,34 +9,33 @@ Dependencies always point **inward**: adapters → application → domain. The c
 
 ## Layout
 
+Hexagonal boundaries apply **inside each domain package** (see ddd-package-by-domain rule):
+
 ```
-cmd/<app>/main.go            # composition root: wires adapters into ports
-internal/domain/             # entities, value objects, domain errors; pure Go, stdlib only
-internal/application/        # use cases (services); depends only on domain + ports
-internal/ports/              # interfaces: inbound (use cases) & outbound (repos, clock)
-internal/adapters/inbound/   # HTTP/gRPC handlers -> call inbound ports
-internal/adapters/outbound/  # repo implementations (memory, redis, postgres...)
+cmd/<app>/main.go                  # composition root: wires adapters into ports
+internal/<domain>/                 # core: entities, ports (interfaces), services; stdlib only
+internal/<domain>/adapter/http/    # inbound adapter -> calls the domain service
+internal/<domain>/adapter/memory/  # outbound adapter -> implements the repository port
 ```
 
 ## Rules
 
-- `domain` imports nothing from the project except itself; no third-party libs.
-- `application` imports only `domain` and `ports`; never an adapter package.
-- Adapters implement ports; inbound adapters depend on inbound port interfaces, not concrete services.
+- The domain core package (`internal/<domain>`) never imports its `adapter/...` packages or third-party libs.
+- Adapters implement ports; inbound adapters depend on interfaces, not concrete services.
 - Define outbound port interfaces from the core's needs (small, consumer-side interfaces).
 - DTOs/transport models live in adapters; map them to domain types at the boundary. Never leak JSON/DB tags into `domain`.
 - Wiring (constructors, config, DI) happens only in `cmd/`.
 - Pass `context.Context` as the first parameter of port methods that do I/O.
 
 ```go
-// ❌ BAD: application depends on a concrete adapter
-import "go-challenge/internal/adapters/outbound/redis"
+// ❌ BAD: domain service depends on a concrete adapter
+import "go-challenge/internal/segment/adapter/redis"
 type Service struct{ repo *redis.Repo }
 
-// ✅ GOOD: application depends on a port
+// ✅ GOOD: domain service depends on its own port
 type Service struct {
-	repo  ports.MembershipRepository
-	clock ports.Clock
+	repo  Repository
+	clock Clock
 }
 ```
 

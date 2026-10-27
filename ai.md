@@ -28,3 +28,21 @@
 - **Result:** Created project rules covering TDD, Hexagonal Architecture, and commit conventions.
 - **Evaluation:** Reviewed the rules for consistency with the project's requirements.
 - **Fixes:** [Add any changes made, if applicable.]
+
+### Prompt #2
+
+- **Stage:** Scaffolding
+- **Tool:** Cursor (Auto)
+- **Prompt:**
+
+  ```
+  Create the initial Go project directory structure only, following Hexagonal Architecture (Ports and Adapters) with DDD package-by-domain layout.
+
+  Use a simple, idiomatic Go layout: `cmd/<app>/` and `internal/<domain>/` with adapters nested under each domain (`adapter/http`, `adapter/memory`). Colocate unit tests next to the code they test — no central `tests/` or layer folders (`services/`, `repositories/`, `ports/`).
+
+  Do not create any files or implement any code yet. Only create the required directories, keeping the structure minimal and avoiding unnecessary abstractions.
+  ```
+
+- **Result:** Created empty directories: `cmd/estimator`, `internal/segment`, `internal/segment/adapter/http`, `internal/segment/adapter/memory`.
+- **Evaluation:** [Add how you reviewed the structure.]
+- **Fixes:** First AI output used layer folders (`domain/`, `application/`, `ports/`, `adapters/...`, `tests/`). Corrected via a DDD package-by-domain rule and rebuilt the tree under `internal/segment/`.
