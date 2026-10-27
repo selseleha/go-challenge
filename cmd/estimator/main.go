@@ -14,6 +14,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 
+	"github.com/selseleha/go-challenge/internal/config"
 	"github.com/selseleha/go-challenge/internal/segment"
 	segmentgrpc "github.com/selseleha/go-challenge/internal/segment/adapter/grpc"
 	segmenthttp "github.com/selseleha/go-challenge/internal/segment/adapter/http"
@@ -22,14 +23,16 @@ import (
 )
 
 func main() {
-	repo := newRepository()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
+
+	repo := newRepository(cfg)
 	svc := segment.NewService(repo, segment.SystemClock{})
 
-	httpAddr := envOr("HTTP_ADDR", ":8080")
-	grpcAddr := envOr("GRPC_ADDR", ":9090")
-
 	httpServer := &http.Server{
-		Addr:              httpAddr,
+		Addr:              cfg.HTTPAddr,
 		Handler:           segmenthttp.NewHandler(svc),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
@@ -43,19 +46,19 @@ func main() {
 	errCh := make(chan error, 2)
 
 	go func() {
-		log.Printf("http estimate API listening on %s", httpAddr)
+		log.Printf("http estimate API listening on %s (ttl=%s store=%s)", cfg.HTTPAddr, cfg.MembershipTTL, cfg.Store)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 	}()
 
 	go func() {
-		lis, err := net.Listen("tcp", grpcAddr)
+		lis, err := net.Listen("tcp", cfg.GRPCAddr)
 		if err != nil {
 			errCh <- err
 			return
 		}
-		log.Printf("grpc ingest API listening on %s", grpcAddr)
+		log.Printf("grpc ingest API listening on %s", cfg.GRPCAddr)
 		errCh <- grpcServer.Serve(lis)
 	}()
 
@@ -71,29 +74,20 @@ func main() {
 	}
 }
 
-func newRepository() segment.Repository {
-	store := envOr("STORE", "memory")
-	switch store {
+func newRepository(cfg config.Config) segment.Repository {
+	switch cfg.Store {
 	case "memory":
 		log.Print("store: memory")
-		return memory.NewRepository()
+		return memory.NewRepository(cfg.MembershipTTL)
 	case "redis":
-		addr := envOr("REDIS_ADDR", "localhost:6379")
-		client := goredis.NewClient(&goredis.Options{Addr: addr})
+		client := goredis.NewClient(&goredis.Options{Addr: cfg.RedisAddr})
 		if err := client.Ping(context.Background()).Err(); err != nil {
-			log.Fatalf("redis ping %s: %v", addr, err)
+			log.Fatalf("redis ping %s: %v", cfg.RedisAddr, err)
 		}
-		log.Printf("store: redis (%s)", addr)
-		return segmentredis.NewRepository(client)
+		log.Printf("store: redis (%s)", cfg.RedisAddr)
+		return segmentredis.NewRepository(client, cfg.MembershipTTL)
 	default:
-		log.Fatalf("unknown STORE %q (want memory or redis)", store)
+		log.Fatalf("unknown STORE %q", cfg.Store)
 		return nil
 	}
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }

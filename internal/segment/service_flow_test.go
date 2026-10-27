@@ -11,8 +11,8 @@ import (
 
 func TestService_Estimate_ExcludesExpiredMemberships(t *testing.T) {
 	now := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
-	repo := memory.NewRepository()
-	svc := segment.NewService(repo, segment.FixedClock{T: now.Add(-segment.MembershipTTL)})
+	repo := memory.NewRepository(segment.DefaultMembershipTTL)
+	svc := segment.NewService(repo, segment.FixedClock{T: now.Add(-segment.DefaultMembershipTTL)})
 
 	ctx := context.Background()
 	if err := svc.Ingest(ctx, "old", "sports"); err != nil {

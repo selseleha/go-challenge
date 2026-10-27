@@ -5,7 +5,7 @@
 //	# terminal 2
 //	go run ./cmd/uss
 //
-// Env (optional): GRPC_ADDR (default :9090), WORKERS (8), EVENTS (1000)
+// Settings come from .env / environment (see .env.example).
 package main
 
 import (
@@ -13,8 +13,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand/v2"
-	"os"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,6 +20,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/selseleha/go-challenge/internal/config"
 	"github.com/selseleha/go-challenge/internal/segment/adapter/grpc/gen"
 )
 
@@ -30,25 +29,26 @@ var segments = []string{
 }
 
 func main() {
-	addr := envOr("GRPC_ADDR", "localhost:9090")
-	workers := envInt("WORKERS", 8)
-	events := envInt("EVENTS", 1000)
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(cfg.USSGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatalf("dial %s: %v", addr, err)
+		log.Fatalf("dial %s: %v", cfg.USSGRPCAddr, err)
 	}
 	defer conn.Close()
 	client := gen.NewMembershipServiceClient(conn)
 
-	jobs := make(chan int, workers*2)
+	jobs := make(chan int, cfg.USSWorkers*2)
 	var okCount, errCount atomic.Int64
 	var wg sync.WaitGroup
 
-	for w := 0; w < workers; w++ {
+	for w := 0; w < cfg.USSWorkers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -69,34 +69,16 @@ func main() {
 	}
 
 	start := time.Now()
-	for i := 0; i < events; i++ {
+	for i := 0; i < cfg.USSEvents; i++ {
 		jobs <- i
 	}
 	close(jobs)
 	wg.Wait()
 
 	elapsed := time.Since(start)
-	log.Printf("done: ok=%d err=%d workers=%d events=%d in %s (%.0f req/s)",
-		okCount.Load(), errCount.Load(), workers, events, elapsed.Round(time.Millisecond),
+	log.Printf("done: ok=%d err=%d workers=%d events=%d addr=%s in %s (%.0f req/s)",
+		okCount.Load(), errCount.Load(), cfg.USSWorkers, cfg.USSEvents, cfg.USSGRPCAddr,
+		elapsed.Round(time.Millisecond),
 		float64(okCount.Load())/elapsed.Seconds(),
 	)
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func envInt(key string, fallback int) int {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n <= 0 {
-		return fallback
-	}
-	return n
 }

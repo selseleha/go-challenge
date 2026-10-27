@@ -10,7 +10,7 @@ import (
 )
 
 func TestRepository_CountActive_IgnoresExpiredAndCountsFresh(t *testing.T) {
-	repo := memory.NewRepository()
+	repo := memory.NewRepository(segment.DefaultMembershipTTL)
 	ctx := context.Background()
 	now := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
@@ -20,7 +20,7 @@ func TestRepository_CountActive_IgnoresExpiredAndCountsFresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := repo.Upsert(ctx, segment.Membership{
-		UserID: "expired", Segment: "sports", TaggedAt: now.Add(-segment.MembershipTTL),
+		UserID: "expired", Segment: "sports", TaggedAt: now.Add(-segment.DefaultMembershipTTL),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -40,12 +40,12 @@ func TestRepository_CountActive_IgnoresExpiredAndCountsFresh(t *testing.T) {
 }
 
 func TestRepository_Upsert_RefreshesTaggedAt(t *testing.T) {
-	repo := memory.NewRepository()
+	repo := memory.NewRepository(segment.DefaultMembershipTTL)
 	ctx := context.Background()
 	now := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
 	if err := repo.Upsert(ctx, segment.Membership{
-		UserID: "u1", Segment: "sports", TaggedAt: now.Add(-segment.MembershipTTL),
+		UserID: "u1", Segment: "sports", TaggedAt: now.Add(-segment.DefaultMembershipTTL),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestRepository_Upsert_RefreshesTaggedAt(t *testing.T) {
 }
 
 func TestRepository_CountActive_EmptySegment(t *testing.T) {
-	repo := memory.NewRepository()
+	repo := memory.NewRepository(segment.DefaultMembershipTTL)
 	got, err := repo.CountActive(context.Background(), "missing", time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)

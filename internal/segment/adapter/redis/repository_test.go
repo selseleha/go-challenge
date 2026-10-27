@@ -23,7 +23,7 @@ func newTestRepo(t *testing.T) (*segmentredis.Repository, *miniredis.Miniredis) 
 	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
 
-	return segmentredis.NewRepository(client), mr
+	return segmentredis.NewRepository(client, segment.DefaultMembershipTTL), mr
 }
 
 func TestRepository_CountActive_IgnoresExpiredAndCountsFresh(t *testing.T) {
@@ -35,7 +35,7 @@ func TestRepository_CountActive_IgnoresExpiredAndCountsFresh(t *testing.T) {
 		UserID: "fresh", Segment: "sports", TaggedAt: now.Add(-24 * time.Hour),
 	})
 	mustUpsert(t, repo, segment.Membership{
-		UserID: "expired", Segment: "sports", TaggedAt: now.Add(-segment.MembershipTTL),
+		UserID: "expired", Segment: "sports", TaggedAt: now.Add(-segment.DefaultMembershipTTL),
 	})
 	mustUpsert(t, repo, segment.Membership{
 		UserID: "other", Segment: "music", TaggedAt: now,
@@ -56,7 +56,7 @@ func TestRepository_Upsert_RefreshesTaggedAt(t *testing.T) {
 	now := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
 	mustUpsert(t, repo, segment.Membership{
-		UserID: "u1", Segment: "sports", TaggedAt: now.Add(-segment.MembershipTTL),
+		UserID: "u1", Segment: "sports", TaggedAt: now.Add(-segment.DefaultMembershipTTL),
 	})
 	mustUpsert(t, repo, segment.Membership{
 		UserID: "u1", Segment: "sports", TaggedAt: now,
@@ -88,7 +88,7 @@ func TestRepository_CountActive_RemovesExpiredMembers(t *testing.T) {
 	now := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
 	mustUpsert(t, repo, segment.Membership{
-		UserID: "expired", Segment: "sports", TaggedAt: now.Add(-segment.MembershipTTL),
+		UserID: "expired", Segment: "sports", TaggedAt: now.Add(-segment.DefaultMembershipTTL),
 	})
 
 	if _, err := repo.CountActive(ctx, "sports", now); err != nil {

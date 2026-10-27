@@ -114,3 +114,18 @@
 - **Result:** Added Redis sorted-set adapter, `STORE=memory|redis` wiring, Dockerfile, and docker-compose. Tests with miniredis passed.
 - **Evaluation:** [Add how you reviewed Redis behaviour and compose.]
 - **Fixes:** [Add any changes made, if applicable.]
+
+### Prompt #7
+
+- **Stage:** Implementation
+- **Tool:** Cursor (Auto)
+- **Prompt:**
+
+  ```
+  Before the next feature, add proper config.
+  Put ports, connections, and the membership TTL (now two weeks) in .env.
+  ```
+
+- **Result:** Added `internal/config`, `.env.example`, injected TTL into memory/redis repos, wired estimator and uss to config.
+- **Evaluation:** [Add how you reviewed the config keys.]
+- **Fixes:** [Add any changes made, if applicable.]

@@ -21,11 +21,12 @@ import (
 // ZREMRANGEBYSCORE to drop expired entries so the key does not grow forever.
 type Repository struct {
 	client goredis.Cmdable
+	ttl    time.Duration
 }
 
 // NewRepository wraps a Redis client (or cluster/compatible Cmdable).
-func NewRepository(client goredis.Cmdable) *Repository {
-	return &Repository{client: client}
+func NewRepository(client goredis.Cmdable, ttl time.Duration) *Repository {
+	return &Repository{client: client, ttl: ttl}
 }
 
 func (r *Repository) Upsert(ctx context.Context, m segment.Membership) error {
@@ -38,7 +39,7 @@ func (r *Repository) Upsert(ctx context.Context, m segment.Membership) error {
 
 func (r *Repository) CountActive(ctx context.Context, name string, now time.Time) (int64, error) {
 	k := key(name)
-	minActive := now.Add(-segment.MembershipTTL).UTC().UnixNano()
+	minActive := now.Add(-r.ttl).UTC().UnixNano()
 	// Active means taggedAt > now-TTL (same as now.Sub(taggedAt) < TTL).
 	minScore := strconv.FormatInt(minActive, 10)
 	maxScore := "+inf"

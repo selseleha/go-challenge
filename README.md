@@ -8,27 +8,32 @@ A user stays in a segment for **two weeks** after being tagged; expired membersh
 ## Quick start
 
 ```bash
+cp .env.example .env   # once — edit ports, store, TTL, etc.
+
 # full stack (Redis + estimator)
 docker compose up --build
 
-# or locally without Docker for the app
-go run ./cmd/estimator                                    # memory
-STORE=redis REDIS_ADDR=localhost:6379 go run ./cmd/estimator  # needs: docker compose up redis -d
-
-# USS simulator (host → compose-published gRPC)
+# or run locally (reads .env automatically)
+go run ./cmd/estimator
 go run ./cmd/uss
 
 curl -s localhost:8080/v1/segments/sports/estimate
 ```
 
-| Env | Default | Used by |
+### Configuration (`.env`)
+
+See [`.env.example`](./.env.example). Important keys:
+
+| Key | Default | Meaning |
 |-----|---------|---------|
-| `HTTP_ADDR` | `:8080` | estimator (REST) |
-| `GRPC_ADDR` | `:9090` / `localhost:9090` | estimator (listen) / uss (dial) |
-| `STORE` | `memory` | estimator (`memory` or `redis`) |
-| `REDIS_ADDR` | `localhost:6379` | estimator when `STORE=redis` |
-| `WORKERS` | `8` | uss |
-| `EVENTS` | `1000` | uss |
+| `HTTP_ADDR` | `:8080` | REST estimate listen address |
+| `GRPC_ADDR` | `:9090` | gRPC ingest listen address |
+| `STORE` | `memory` | `memory` or `redis` |
+| `REDIS_ADDR` | `localhost:6379` | Redis host (when `STORE=redis`) |
+| `MEMBERSHIP_TTL` | `14d` | How long a tag stays active (`14d` or `336h`) |
+| `USS_GRPC_ADDR` | `localhost:9090` | Where `cmd/uss` dials |
+| `USS_WORKERS` | `8` | Concurrent USS workers |
+| `USS_EVENTS` | `1000` | How many ingest RPCs to send |
 
 ```bash
 go test ./...

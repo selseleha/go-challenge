@@ -1,0 +1,107 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/joho/godotenv"
+)
+
+// Config holds runtime settings loaded from environment / .env.
+type Config struct {
+	HTTPAddr      string
+	GRPCAddr      string
+	Store         string // memory | redis
+	RedisAddr     string
+	MembershipTTL time.Duration
+	USSGRPCAddr   string
+	USSWorkers    int
+	USSEvents     int
+}
+
+// Load reads optional .env then environment variables.
+// Missing .env is ignored so production can rely on real env only.
+func Load() (Config, error) {
+	_ = godotenv.Load()
+
+	ttl, err := parseDuration(envOr("MEMBERSHIP_TTL", "14d"))
+	if err != nil {
+		return Config{}, fmt.Errorf("MEMBERSHIP_TTL: %w", err)
+	}
+	if ttl <= 0 {
+		return Config{}, fmt.Errorf("MEMBERSHIP_TTL must be positive")
+	}
+
+	workers, err := envInt("USS_WORKERS", 8)
+	if err != nil {
+		return Config{}, fmt.Errorf("USS_WORKERS: %w", err)
+	}
+	events, err := envInt("USS_EVENTS", 1000)
+	if err != nil {
+		return Config{}, fmt.Errorf("USS_EVENTS: %w", err)
+	}
+
+	cfg := Config{
+		HTTPAddr:      envOr("HTTP_ADDR", ":8080"),
+		GRPCAddr:      envOr("GRPC_ADDR", ":9090"),
+		Store:         strings.ToLower(envOr("STORE", "memory")),
+		RedisAddr:     envOr("REDIS_ADDR", "localhost:6379"),
+		MembershipTTL: ttl,
+		USSGRPCAddr:   dialAddr(envOr("USS_GRPC_ADDR", envOr("GRPC_ADDR", "localhost:9090"))),
+		USSWorkers:    workers,
+		USSEvents:     events,
+	}
+
+	switch cfg.Store {
+	case "memory", "redis":
+	default:
+		return Config{}, fmt.Errorf("STORE must be memory or redis, got %q", cfg.Store)
+	}
+	return cfg, nil
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func envInt(key string, fallback int) (int, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, err
+	}
+	if n <= 0 {
+		return 0, fmt.Errorf("must be positive")
+	}
+	return n, nil
+}
+
+// parseDuration accepts Go durations (e.g. 336h) or day shorthand (e.g. 14d).
+func parseDuration(s string) (time.Duration, error) {
+	s = strings.TrimSpace(s)
+	if strings.HasSuffix(s, "d") || strings.HasSuffix(s, "D") {
+		days, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSuffix(s, "d"), "D"))
+		if err != nil {
+			return 0, err
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
+	}
+	return time.ParseDuration(s)
+}
+
+// dialAddr turns ":9090" into "localhost:9090" for client connections.
+func dialAddr(addr string) string {
+	if strings.HasPrefix(addr, ":") {
+		return "localhost" + addr
+	}
+	return addr
+}

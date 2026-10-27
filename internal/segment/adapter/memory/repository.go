@@ -12,16 +12,19 @@ import (
 //
 // Data is keyed segment → userID → taggedAt so ingest is O(1) and estimate
 // scans only one segment (not all users). Suitable for local/dev and tests;
-// a production store would keep the same shape (e.g. Redis HASH per segment
-// with TTL, or a time-indexed table) for the same access pattern.
+// production can use adapter/redis with the same access pattern.
 type Repository struct {
 	mu   sync.RWMutex
+	ttl  time.Duration
 	data map[string]map[string]time.Time
 }
 
 // NewRepository creates an empty in-memory membership store.
-func NewRepository() *Repository {
-	return &Repository{data: make(map[string]map[string]time.Time)}
+func NewRepository(ttl time.Duration) *Repository {
+	return &Repository{
+		ttl:  ttl,
+		data: make(map[string]map[string]time.Time),
+	}
 }
 
 func (r *Repository) Upsert(_ context.Context, m segment.Membership) error {
@@ -44,7 +47,7 @@ func (r *Repository) CountActive(_ context.Context, name string, now time.Time) 
 	users := r.data[name]
 	var n int64
 	for _, taggedAt := range users {
-		if (segment.Membership{TaggedAt: taggedAt}).Active(now) {
+		if (segment.Membership{TaggedAt: taggedAt}).Active(now, r.ttl) {
 			n++
 		}
 	}

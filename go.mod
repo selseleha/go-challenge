@@ -4,6 +4,7 @@ go 1.27.3
 
 require (
 	github.com/alicebob/miniredis/v2 v2.40.0
+	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.23.0
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12

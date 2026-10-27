@@ -1,0 +1,7 @@
+.git
+.idea
+.cursor
+.env
+*.md
+sample.ai.md
+ai.md

@@ -2,8 +2,8 @@ package segment
 
 import "time"
 
-// MembershipTTL is how long a user remains counted in a segment after being tagged.
-const MembershipTTL = 14 * 24 * time.Hour
+// DefaultMembershipTTL is the challenge default (two weeks) when config is unset.
+const DefaultMembershipTTL = 14 * 24 * time.Hour
 
 // Membership is a user tagged into a segment at a point in time.
 type Membership struct {
@@ -12,8 +12,8 @@ type Membership struct {
 	TaggedAt time.Time
 }
 
-// Active reports whether the membership still counts at now.
-// At exactly MembershipTTL after TaggedAt the membership is expired.
-func (m Membership) Active(now time.Time) bool {
-	return now.Sub(m.TaggedAt) < MembershipTTL
+// Active reports whether the membership still counts at now for the given ttl.
+// At exactly ttl after TaggedAt the membership is expired.
+func (m Membership) Active(now time.Time, ttl time.Duration) bool {
+	return now.Sub(m.TaggedAt) < ttl
 }
