@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/selseleha/go-challenge/internal/segment"
@@ -111,12 +112,54 @@ func TestHandler_Estimate_MapsServiceErrorTo500(t *testing.T) {
 }
 
 func TestHandler_Health_Ready(t *testing.T) {
-	h := newHandler(&stubEstimator{}, &stubHealth{info: segment.HealthInfo{Status: segment.StatusReady, Store: "redis"}}, nil)
+	h := newHandler(&stubEstimator{}, &stubHealth{info: segment.HealthInfo{
+		Status: segment.StatusReady,
+		Store:  "postgres_redis",
+		Hot: segment.StoreStats{
+			Kind:          "postgres_redis",
+			OK:            true,
+			Members:       10,
+			SourceMembers: 12,
+			HasSource:     true,
+			SegmentNames:  []string{"sports", "music"},
+		},
+	}}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
+	req.Header.Set("Accept", "application/json")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"source_members":12`) || !strings.Contains(body, `"sports"`) {
+		t.Fatalf("health json = %s", body)
+	}
+}
+
+func TestHandler_Health_HTMLForBrowsers(t *testing.T) {
+	h := newHandler(&stubEstimator{}, &stubHealth{info: segment.HealthInfo{
+		Status: segment.StatusReady,
+		Store:  "redis",
+		Hot:    segment.StoreStats{Kind: "redis", OK: true, Members: 3, Segments: 1},
+	}}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	ct := rec.Header().Get("Content-Type")
+	if ct != "text/html; charset=utf-8" {
+		t.Fatalf("Content-Type = %q", ct)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Estimation Service") || !strings.Contains(body, "Segment estimates") {
+		t.Fatalf("unexpected html: %s", body)
+	}
+	if !strings.Contains(body, "Postgres") || !strings.Contains(body, "/v1/segments/") {
+		t.Fatalf("monitor markup missing charts/poll: %s", body[:min(300, len(body))])
 	}
 }
 

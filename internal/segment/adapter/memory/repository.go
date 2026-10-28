@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -64,4 +65,29 @@ func (r *Repository) Flush(context.Context) error {
 
 func (r *Repository) WarmFromSource(context.Context, time.Time) error { return nil }
 
+func (r *Repository) BeforeWarm(context.Context) error { return nil }
+
+func (r *Repository) AfterWarm(context.Context) error { return nil }
+
 func (r *Repository) AsyncWarm() bool { return false }
+
+func (r *Repository) Stats(context.Context) (segment.StoreStats, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var members int64
+	names := make([]string, 0, len(r.data))
+	for seg, users := range r.data {
+		members += int64(len(users))
+		names = append(names, seg)
+	}
+	slices.Sort(names)
+	return segment.StoreStats{
+		Kind:         "memory",
+		OK:           true,
+		Segments:     int64(len(r.data)),
+		Members:      members,
+		SegmentNames: names,
+		Detail:       "in-process map",
+	}, nil
+}

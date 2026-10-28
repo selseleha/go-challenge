@@ -30,6 +30,8 @@ func (s *stubRepo) CountActive(_ context.Context, name string, now time.Time) (i
 type stubHot struct {
 	flushed bool
 	warmed  bool
+	before  bool
+	after   bool
 	async   bool
 }
 
@@ -43,16 +45,32 @@ func (s *stubHot) WarmFromSource(context.Context, time.Time) error {
 	return nil
 }
 
+func (s *stubHot) BeforeWarm(context.Context) error {
+	s.before = true
+	return nil
+}
+
+func (s *stubHot) AfterWarm(context.Context) error {
+	s.after = true
+	return nil
+}
+
 func (s *stubHot) AsyncWarm() bool { return s.async }
 
+type stubStats struct{}
+
+func (stubStats) Stats(context.Context) (segment.StoreStats, error) {
+	return segment.StoreStats{Kind: "memory", OK: true}, nil
+}
+
 func newTestService(repo segment.Repository, hot segment.HotStoreControl) *segment.Service {
-	return segment.NewService(repo, segment.FixedClock{T: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)}, segment.NewReadiness(), hot, "memory")
+	return segment.NewService(repo, segment.FixedClock{T: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)}, segment.NewReadiness(), hot, stubStats{}, "memory")
 }
 
 func TestService_Ingest_UsesClockAndUpserts(t *testing.T) {
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	repo := &stubRepo{}
-	svc := segment.NewService(repo, segment.FixedClock{T: now}, segment.NewReadiness(), &stubHot{}, "memory")
+	svc := segment.NewService(repo, segment.FixedClock{T: now}, segment.NewReadiness(), &stubHot{}, stubStats{}, "memory")
 
 	if err := svc.Ingest(context.Background(), "u104010", "sports"); err != nil {
 		t.Fatal(err)
@@ -66,7 +84,7 @@ func TestService_Ingest_UsesClockAndUpserts(t *testing.T) {
 func TestService_Estimate_DelegatesToRepoWithNow(t *testing.T) {
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	repo := &stubRepo{count: 7}
-	svc := segment.NewService(repo, segment.FixedClock{T: now}, segment.NewReadiness(), &stubHot{}, "memory")
+	svc := segment.NewService(repo, segment.FixedClock{T: now}, segment.NewReadiness(), &stubHot{}, stubStats{}, "memory")
 
 	got, err := svc.Estimate(context.Background(), "sports")
 	if err != nil {
@@ -80,7 +98,7 @@ func TestService_Estimate_DelegatesToRepoWithNow(t *testing.T) {
 func TestService_Estimate_NotReady(t *testing.T) {
 	ready := segment.NewReadiness()
 	_ = ready.BeginReset()
-	svc := segment.NewService(&stubRepo{count: 99}, segment.SystemClock{}, ready, &stubHot{}, "redis")
+	svc := segment.NewService(&stubRepo{count: 99}, segment.SystemClock{}, ready, &stubHot{}, stubStats{}, "redis")
 
 	_, err := svc.Estimate(context.Background(), "sports")
 	if err != segment.ErrNotReady {
@@ -95,7 +113,7 @@ func TestService_Reset_SyncMarksReady(t *testing.T) {
 	if err := svc.Reset(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !hot.flushed || !hot.warmed {
+	if !hot.flushed || !hot.warmed || !hot.before || !hot.after {
 		t.Fatalf("hot = %+v", hot)
 	}
 	h := svc.Health(context.Background())
@@ -109,7 +127,7 @@ func TestService_Reset_AsyncStaysResettingUntilWarmDone(t *testing.T) {
 	block := make(chan struct{})
 	hotBlocked := &blockingHot{stubHot: hot, block: block}
 	ready := segment.NewReadiness()
-	svc := segment.NewService(&stubRepo{}, segment.SystemClock{}, ready, hotBlocked, "postgres_redis")
+	svc := segment.NewService(&stubRepo{}, segment.SystemClock{}, ready, hotBlocked, stubStats{}, "postgres_redis")
 
 	if err := svc.Reset(context.Background()); err != nil {
 		t.Fatal(err)
@@ -142,7 +160,7 @@ func (b *blockingHot) WarmFromSource(ctx context.Context, now time.Time) error {
 func TestService_Reset_RejectsConcurrent(t *testing.T) {
 	ready := segment.NewReadiness()
 	_ = ready.BeginReset()
-	svc := segment.NewService(&stubRepo{}, segment.SystemClock{}, ready, &stubHot{}, "memory")
+	svc := segment.NewService(&stubRepo{}, segment.SystemClock{}, ready, &stubHot{}, stubStats{}, "memory")
 	if err := svc.Reset(context.Background()); err != segment.ErrResetInProgress {
 		t.Fatalf("err = %v", err)
 	}

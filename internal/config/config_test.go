@@ -36,6 +36,12 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.AdminToken != "dev-admin-token" {
 		t.Fatalf("AdminToken = %q", cfg.AdminToken)
 	}
+	if cfg.OutboxBatchSize != 1000 {
+		t.Fatalf("OutboxBatchSize = %d", cfg.OutboxBatchSize)
+	}
+	if cfg.OutboxPollInterval != 100*time.Millisecond {
+		t.Fatalf("OutboxPollInterval = %v", cfg.OutboxPollInterval)
+	}
 }
 
 func TestLoad_PostgresRedisRequiresDatabaseURL(t *testing.T) {

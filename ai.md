@@ -164,3 +164,33 @@
 - **Result:** Boot flags removed. Added health + admin reset with readiness gating (`ready` / `resetting`).
 - **Evaluation:** [Add how you verified 503 during reset.]
 - **Fixes:** [Add any changes made, if applicable.]
+
+### Prompt #10
+
+- **Stage:** Implementation
+- **Tool:** Cursor (Auto)
+- **Prompt:**
+
+  ```
+  Standard reset for postgres_redis: pause outbox, discard pending, flush Redis,
+  warm from memberships, resume. Also speed outbox (bigger batch, faster poll, pipeline).
+  ```
+
+- **Result:** BeforeWarm/AfterWarm, DiscardPendingOutbox, worker pause/resume, Redis pipeline + MarkDoneBatch.
+- **Evaluation:** [Add how you verified reset and drain speed.]
+- **Fixes:** [Add any changes made, if applicable.]
+
+### Prompt #11
+
+- **Stage:** Implementation
+- **Tool:** Cursor (Auto)
+- **Prompt:**
+
+  ```
+  On health monitor show Postgres row count and Redis member count.
+  Each refresh call estimate for every segment and chart them.
+  ```
+
+- **Result:** Live HTML polls health JSON + per-segment estimates; source_members / segment_names in stats.
+- **Evaluation:** [Add how you checked the charts.]
+- **Fixes:** [Add any changes made, if applicable.]

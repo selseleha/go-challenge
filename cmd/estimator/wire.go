@@ -29,7 +29,7 @@ func wireApp(ctx context.Context, cfg config.Config) (appBundle, error) {
 		repo := memory.NewRepository(cfg.MembershipTTL)
 		log.Print("store: memory")
 		return appBundle{
-			Service: segment.NewService(repo, segment.SystemClock{}, ready, repo, cfg.Store),
+			Service: segment.NewService(repo, segment.SystemClock{}, ready, repo, repo, cfg.Store),
 			Cleanup: func() {},
 		}, nil
 
@@ -40,7 +40,7 @@ func wireApp(ctx context.Context, cfg config.Config) (appBundle, error) {
 		}
 		log.Printf("store: redis (%s)", cfg.RedisAddr)
 		return appBundle{
-			Service: segment.NewService(cache, segment.SystemClock{}, ready, cache, cfg.Store),
+			Service: segment.NewService(cache, segment.SystemClock{}, ready, cache, cache, cfg.Store),
 			Cleanup: func() { _ = client.Close() },
 		}, nil
 
@@ -55,10 +55,13 @@ func wireApp(ctx context.Context, cfg config.Config) (appBundle, error) {
 			return appBundle{}, err
 		}
 		repo := postgresredis.NewRepository(store, cache, cfg.MembershipTTL)
-		startOutboxWorker(ctx, store, cache, cfg)
-		log.Printf("store: postgres_redis (db + redis=%s, outbox every %s)", cfg.RedisAddr, cfg.OutboxPollInterval)
+		worker := postgresredis.NewWorker(store, cache, cfg.OutboxPollInterval, cfg.OutboxBatchSize)
+		repo.SetWorker(worker)
+		go worker.Run(ctx)
+		log.Printf("store: postgres_redis (db + redis=%s, outbox batch=%d every %s)",
+			cfg.RedisAddr, cfg.OutboxBatchSize, cfg.OutboxPollInterval)
 		return appBundle{
-			Service: segment.NewService(repo, segment.SystemClock{}, ready, repo, cfg.Store),
+			Service: segment.NewService(repo, segment.SystemClock{}, ready, repo, repo, cfg.Store),
 			Cleanup: func() {
 				store.Close()
 				_ = client.Close()
@@ -77,9 +80,4 @@ func openRedisCache(ctx context.Context, cfg config.Config) (*goredis.Client, *s
 		return nil, nil, fmt.Errorf("redis ping %s: %w", cfg.RedisAddr, err)
 	}
 	return client, segmentredis.NewRepository(client, cfg.MembershipTTL), nil
-}
-
-func startOutboxWorker(ctx context.Context, store *postgres.Store, cache *segmentredis.Repository, cfg config.Config) {
-	worker := postgresredis.NewWorker(store, cache, cfg.OutboxPollInterval, cfg.OutboxBatchSize)
-	go worker.Run(ctx)
 }

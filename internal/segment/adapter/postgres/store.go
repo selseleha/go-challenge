@@ -111,6 +111,31 @@ func (s *Store) ListActive(ctx context.Context, now time.Time, ttl time.Duration
 	return out, rows.Err()
 }
 
+// CountAll returns total rows in memberships (including expired).
+func (s *Store) CountAll(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM memberships`).Scan(&n)
+	return n, err
+}
+
+// ListSegments returns distinct segment names present in memberships.
+func (s *Store) ListSegments(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT DISTINCT segment FROM memberships ORDER BY segment`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
 // CountActiveSQL is a fallback estimate directly from Postgres.
 func (s *Store) CountActiveSQL(ctx context.Context, name string, now time.Time, ttl time.Duration) (int64, error) {
 	minTagged := now.Add(-ttl)
@@ -169,10 +194,18 @@ func (s *Store) Claim(ctx context.Context, limit int) ([]OutboxItem, error) {
 }
 
 func (s *Store) MarkDone(ctx context.Context, id int64) error {
+	return s.MarkDoneBatch(ctx, []int64{id})
+}
+
+// MarkDoneBatch marks many outbox rows processed in one statement.
+func (s *Store) MarkDoneBatch(ctx context.Context, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
 	_, err := s.pool.Exec(ctx, `
 		UPDATE outbox SET processed_at = NOW(), last_error = NULL
-		WHERE id = $1
-	`, id)
+		WHERE id = ANY($1)
+	`, ids)
 	return err
 }
 
@@ -183,6 +216,21 @@ func (s *Store) MarkRetry(ctx context.Context, id int64, cause error, next time.
 		WHERE id = $1
 	`, id, truncateErr(cause), next.UTC())
 	return err
+}
+
+// DiscardPendingOutbox marks all unprocessed outbox rows done so a cache rebuild
+// from memberships is not raced by stale projections.
+func (s *Store) DiscardPendingOutbox(ctx context.Context) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE outbox
+		SET processed_at = NOW(),
+		    last_error = 'discarded on cache reset'
+		WHERE processed_at IS NULL
+	`)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 func truncateErr(err error) string {

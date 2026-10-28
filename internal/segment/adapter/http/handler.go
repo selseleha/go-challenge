@@ -56,8 +56,25 @@ type errorResponse struct {
 }
 
 type healthResponse struct {
-	Status string `json:"status"`
-	Store  string `json:"store"`
+	Status     string  `json:"status"`
+	Store      string  `json:"store"`
+	UptimeSec  float64 `json:"uptime_sec"`
+	GoRoutines int     `json:"goroutines"`
+	AllocMiB   float64 `json:"alloc_mib"`
+	SysMiB     float64 `json:"sys_mib"`
+	NumGC      uint32  `json:"num_gc"`
+	ProbeMS    float64 `json:"probe_ms"`
+	Hot        struct {
+		Kind          string   `json:"kind"`
+		OK            bool     `json:"ok"`
+		LatencyMS     float64  `json:"latency_ms"`
+		Segments      int64    `json:"segments"`
+		Members       int64    `json:"members"`
+		SourceMembers int64    `json:"source_members"`
+		HasSource     bool     `json:"has_source"`
+		SegmentNames  []string `json:"segment_names"`
+		Detail        string   `json:"detail"`
+	} `json:"hot_store"`
 }
 
 type resetResponse struct {
@@ -94,7 +111,37 @@ func (h *Handler) healthCheck(w http.ResponseWriter, r *http.Request) {
 	if info.Status != segment.StatusReady {
 		code = http.StatusServiceUnavailable
 	}
-	writeJSON(w, code, healthResponse{Status: info.Status, Store: info.Store})
+	if wantsHTML(r) {
+		writeHealthHTML(w, code, info)
+		return
+	}
+	writeJSON(w, code, toHealthResponse(info))
+}
+
+func toHealthResponse(info segment.HealthInfo) healthResponse {
+	resp := healthResponse{
+		Status:     info.Status,
+		Store:      info.Store,
+		UptimeSec:  info.Uptime.Seconds(),
+		GoRoutines: info.GoRoutines,
+		AllocMiB:   info.AllocMiB,
+		SysMiB:     info.SysMiB,
+		NumGC:      info.NumGC,
+		ProbeMS:    info.ProbeMS,
+	}
+	resp.Hot.Kind = info.Hot.Kind
+	resp.Hot.OK = info.Hot.OK
+	resp.Hot.LatencyMS = info.Hot.LatencyMS
+	resp.Hot.Segments = info.Hot.Segments
+	resp.Hot.Members = info.Hot.Members
+	resp.Hot.SourceMembers = info.Hot.SourceMembers
+	resp.Hot.HasSource = info.Hot.HasSource
+	resp.Hot.SegmentNames = info.Hot.SegmentNames
+	if resp.Hot.SegmentNames == nil {
+		resp.Hot.SegmentNames = []string{}
+	}
+	resp.Hot.Detail = info.Hot.Detail
+	return resp
 }
 
 func (h *Handler) reset(w http.ResponseWriter, r *http.Request) {

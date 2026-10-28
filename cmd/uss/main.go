@@ -34,7 +34,7 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.USSTimeout)
 	defer cancel()
 
 	conn, err := grpc.NewClient(cfg.USSGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -44,16 +44,21 @@ func main() {
 	defer conn.Close()
 	client := gen.NewMembershipServiceClient(conn)
 
-	jobs := make(chan int, cfg.USSWorkers*2)
+	// Wide user space so multi-million runs create many distinct memberships.
+	const userSpace = 5_000_000
+
+	jobs := make(chan int, cfg.USSWorkers*4)
 	var okCount, errCount atomic.Int64
 	var wg sync.WaitGroup
+
+	log.Printf("uss → %s workers=%d events=%d timeout=%s", cfg.USSGRPCAddr, cfg.USSWorkers, cfg.USSEvents, cfg.USSTimeout)
 
 	for w := 0; w < cfg.USSWorkers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for range jobs {
-				userID := fmt.Sprintf("u%06d", rand.IntN(50_000))
+				userID := fmt.Sprintf("u%07d", rand.IntN(userSpace))
 				segment := segments[rand.IntN(len(segments))]
 				_, err := client.Ingest(ctx, &gen.IngestRequest{
 					UserId:  userID,

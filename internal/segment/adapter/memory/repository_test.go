@@ -2,6 +2,7 @@ package memory_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -72,5 +73,30 @@ func TestRepository_CountActive_EmptySegment(t *testing.T) {
 	}
 	if got != 0 {
 		t.Fatalf("CountActive = %d, want 0", got)
+	}
+}
+
+func TestRepository_Stats_IncludesSegmentNamesAndMembers(t *testing.T) {
+	repo := memory.NewRepository(segment.DefaultMembershipTTL)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	_ = repo.Upsert(ctx, segment.Membership{UserID: "u1", Segment: "sports", TaggedAt: now})
+	_ = repo.Upsert(ctx, segment.Membership{UserID: "u2", Segment: "music", TaggedAt: now})
+	_ = repo.Upsert(ctx, segment.Membership{UserID: "u3", Segment: "sports", TaggedAt: now})
+
+	st, err := repo.Stats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Members != 3 || st.Segments != 2 {
+		t.Fatalf("stats members/segments = %d/%d", st.Members, st.Segments)
+	}
+	if st.HasSource {
+		t.Fatal("memory has no durable source")
+	}
+	names := append([]string(nil), st.SegmentNames...)
+	slices.Sort(names)
+	if !slices.Equal(names, []string{"music", "sports"}) {
+		t.Fatalf("SegmentNames = %v", st.SegmentNames)
 	}
 }

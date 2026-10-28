@@ -1,6 +1,10 @@
 package segment
 
-import "context"
+import (
+	"context"
+	"runtime"
+	"time"
+)
 
 // Service implements ingest, estimate, health, and admin reset use cases.
 type Service struct {
@@ -8,17 +12,21 @@ type Service struct {
 	clock     Clock
 	ready     *Readiness
 	hot       HotStoreControl
+	stats     StoreStatser
 	storeName string
+	startedAt time.Time
 }
 
 // NewService wires outbound ports into the segment use cases.
-func NewService(repo Repository, clock Clock, ready *Readiness, hot HotStoreControl, storeName string) *Service {
+func NewService(repo Repository, clock Clock, ready *Readiness, hot HotStoreControl, stats StoreStatser, storeName string) *Service {
 	return &Service{
 		repo:      repo,
 		clock:     clock,
 		ready:     ready,
 		hot:       hot,
+		stats:     stats,
 		storeName: storeName,
+		startedAt: time.Now(),
 	}
 }
 
@@ -47,8 +55,33 @@ func (s *Service) Estimate(ctx context.Context, name string) (int64, error) {
 	return s.repo.CountActive(ctx, name, s.clock.Now())
 }
 
-func (s *Service) Health(context.Context) HealthInfo {
-	return HealthInfo{Status: s.ready.Status(), Store: s.storeName}
+func (s *Service) Health(ctx context.Context) HealthInfo {
+	info := HealthInfo{
+		Status:     s.ready.Status(),
+		Store:      s.storeName,
+		Uptime:     time.Since(s.startedAt),
+		GoRoutines: runtime.NumGoroutine(),
+	}
+
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+	info.AllocMiB = float64(mem.Alloc) / (1024 * 1024)
+	info.SysMiB = float64(mem.Sys) / (1024 * 1024)
+	info.NumGC = mem.NumGC
+
+	if s.stats != nil {
+		if st, err := s.stats.Stats(ctx); err == nil {
+			info.Hot = st
+		} else {
+			info.Hot = StoreStats{Kind: s.storeName, OK: false, Detail: err.Error()}
+		}
+	}
+
+	start := time.Now()
+	_, _ = s.repo.CountActive(ctx, "__health_probe__", s.clock.Now())
+	info.ProbeMS = float64(time.Since(start).Microseconds()) / 1000.0
+
+	return info
 }
 
 // Reset clears the hot store. For postgres_redis, reload from Postgres runs asynchronously.
@@ -58,23 +91,36 @@ func (s *Service) Reset(ctx context.Context) error {
 		return err
 	}
 
+	// Pause outbox / discard stale projections before touching Redis so the
+	// worker cannot race Flush or WarmFromSource.
+	if err := s.hot.BeforeWarm(ctx); err != nil {
+		_ = s.hot.AfterWarm(ctx)
+		s.ready.MarkReady()
+		return err
+	}
 	if err := s.hot.Flush(ctx); err != nil {
+		_ = s.hot.AfterWarm(ctx)
 		s.ready.MarkReady()
 		return err
 	}
 
 	if s.hot.AsyncWarm() {
 		go func() {
-			defer s.ready.MarkReady()
+			defer func() {
+				_ = s.hot.AfterWarm(context.Background())
+				s.ready.MarkReady()
+			}()
 			_ = s.hot.WarmFromSource(context.Background(), s.clock.Now())
 		}()
 		return nil
 	}
 
 	if err := s.hot.WarmFromSource(ctx, s.clock.Now()); err != nil {
+		_ = s.hot.AfterWarm(ctx)
 		s.ready.MarkReady()
 		return err
 	}
+	_ = s.hot.AfterWarm(ctx)
 	s.ready.MarkReady()
 	return nil
 }

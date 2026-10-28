@@ -20,7 +20,7 @@ go run ./cmd/uss
 curl -s localhost:8080/v1/health
 curl -s localhost:8080/v1/segments/sports/estimate
 
-# rebuild hot store (memory/redis: flush; postgres_redis: flush + async warm from DB)
+# rebuild hot store (memory/redis: flush; postgres_redis: pause outbox, discard pending, flush + warm from DB)
 curl -s -X POST -H "X-Admin-Token: $ADMIN_TOKEN" localhost:8080/v1/admin/reset
 ```
 
@@ -37,8 +37,8 @@ See [`.env.example`](./.env.example). Important keys:
 | `DATABASE_URL` | _(required for postgres_redis)_ | Postgres DSN |
 | `MEMBERSHIP_TTL` | `14d` | How long a tag stays active (`14d` or `336h`) |
 | `ADMIN_TOKEN` | `dev-admin-token` | Token for `POST /v1/admin/reset` |
-| `OUTBOX_POLL_INTERVAL` | `2s` | Outbox → Redis worker tick |
-| `OUTBOX_BATCH_SIZE` | `100` | Outbox claim batch size |
+| `OUTBOX_POLL_INTERVAL` | `100ms` | Outbox → Redis poll when idle (busy drain skips wait) |
+| `OUTBOX_BATCH_SIZE` | `1000` | Outbox claim batch size |
 | `USS_GRPC_ADDR` | `localhost:9090` | Where `cmd/uss` dials |
 | `USS_WORKERS` | `8` | Concurrent USS workers |
 | `USS_EVENTS` | `1000` | How many ingest RPCs to send |
@@ -84,12 +84,11 @@ GET /v1/segments/{segment}/estimate
 GET /v1/health
 ```
 
-```json
-{"status":"ready","store":"postgres_redis"}
-```
+Browser → HTML dashboard (Redis/hot-store status, members loaded, runtime probe).  
+`Accept: application/json` or `?format=json` → JSON with the same fields.
 
 - `ready` → `200`
-- `resetting` → `503` (same JSON shape)
+- `resetting` → `503`
 
 ### Admin reset
 
@@ -101,7 +100,7 @@ X-Admin-Token: <ADMIN_TOKEN>
 | Store | Behaviour |
 |-------|-----------|
 | `memory` / `redis` | Flush hot store synchronously → `200` `ready` |
-| `postgres_redis` | Flush Redis, reload active rows from Postgres **async** → `202` `resetting` until done |
+| `postgres_redis` | Pause outbox, discard pending, flush Redis, warm from memberships **async**, resume → `202` `resetting` until done |
 
 Concurrent reset → `409`. Missing/invalid token → `401`.
 ## Design choices

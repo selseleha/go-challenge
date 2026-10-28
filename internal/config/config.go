@@ -26,6 +26,7 @@ type Config struct {
 	USSGRPCAddr string
 	USSWorkers  int
 	USSEvents   int
+	USSTimeout  time.Duration
 }
 
 // Load reads optional .env then environment variables.
@@ -49,13 +50,17 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("USS_EVENTS: %w", err)
 	}
-	batch, err := envInt("OUTBOX_BATCH_SIZE", 100)
+	batch, err := envInt("OUTBOX_BATCH_SIZE", 1000)
 	if err != nil {
 		return Config{}, fmt.Errorf("OUTBOX_BATCH_SIZE: %w", err)
 	}
-	poll, err := parseDuration(envOr("OUTBOX_POLL_INTERVAL", "2s"))
+	poll, err := parseDuration(envOr("OUTBOX_POLL_INTERVAL", "100ms"))
 	if err != nil {
 		return Config{}, fmt.Errorf("OUTBOX_POLL_INTERVAL: %w", err)
+	}
+	ussTimeout, err := parseDuration(envOr("USS_TIMEOUT", "30m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("USS_TIMEOUT: %w", err)
 	}
 
 	cfg := Config{
@@ -71,6 +76,7 @@ func Load() (Config, error) {
 		USSGRPCAddr:        dialAddr(envOr("USS_GRPC_ADDR", envOr("GRPC_ADDR", "localhost:9090"))),
 		USSWorkers:         workers,
 		USSEvents:          events,
+		USSTimeout:         ussTimeout,
 	}
 
 	switch cfg.Store {
