@@ -1,13 +1,15 @@
 # Estimation Service (Go Challenge)
 
+![health monitor](./img.png)
+
 Answers: **how many users are in segment X?**  
 A user stays in a segment for **two weeks** after being tagged; expired memberships are not counted.
 
+Live health dashboard: `GET /v1/health` in a browser (Postgres vs Redis totals, lag, per-segment estimates).
+
+Architecture:
+
 ![architecture](./Untitled%20Diagram.drawio.png)
-
-Live health dashboard (`GET /v1/health` in a browser) — Postgres vs Redis totals, lag, and per-segment estimates:
-
-![health monitor](./img.png)
 
 ## Quick start
 
@@ -133,7 +135,7 @@ Concurrent reset → `409`. Missing/invalid token → `401`.
 | **REST for estimate** | Simple read; easy to call with curl/browser; cache-friendly |
 | **Hexagonal + package-by-domain** | `internal/segment` owns model, ports, service; adapters under `adapter/{http,grpc,memory}` |
 | **`STORE` strategies** | Same `Repository` port; swap at composition root without touching HTTP/gRPC/domain |
-| **Redis sorted set** `segment:{name}` score=`taggedAt` | Ingest `ZADD`; estimate `ZCOUNT` + prune expired — fits TTL + per-segment scale |
+| **Redis sorted set** `segment:{name}` score=`taggedAt` | Ingest `ZADD GT` (never regress score); estimate `ZCOUNT` + prune expired — fits TTL + per-segment scale |
 | **Postgres + transactional outbox** | Durable history in Postgres; Redis is a projection. Outbox in the same TX beats “write Redis then failure table” |
 | **In-process outbox worker** | Pipelined Redis writes + batch mark-done; busy-drain when the queue is non-empty |
 | **Admin reset (no boot warm/flush)** | Startup stays fast; `POST /v1/admin/reset` rebuilds the hot store; estimate returns `503` while resetting |
@@ -152,6 +154,13 @@ Membership rule: active while `now - taggedAt < TTL`. Re-ingest of the same user
 - **Sharding:** not needed now. If Postgres history becomes huge, partition by `segment` or time and/or prune expired memberships; Redis can move to Cluster with hash-tagged keys later.
 - **Outbox retention:** in-process cleaner deletes processed rows older than `OUTBOX_CLEANUP_RETENTION` in batches.
 - **Reset warm:** keyset-paged `ListActivePage` + Redis pipelines — does not load all active rows into one Go slice.
+
+### Known trade-offs (called out on purpose)
+
+These are conscious for the challenge scope; not forgotten:
+
+1. **No automatic boot warm.** With `STORE=postgres_redis`, a fresh Redis (or wiped volume) starts `ready` with an empty hot cache while Postgres still holds history. New ingests refill via outbox; **full rebuild is `POST /v1/admin/reset`**. That keeps startup fast and avoids multi-million warm on every boot.
+2. **Async warm failure currently logs and still becomes `ready`.** Ideal follow-up: stay `resetting` / degraded so estimate cannot serve undercounts with `200` (see `TODO` in `Service.Reset`). Until then, check logs after reset if Redis looks incomplete.
 
 ## Layout
 

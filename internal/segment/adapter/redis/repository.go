@@ -32,10 +32,13 @@ func NewRepository(client goredis.Cmdable, ttl time.Duration) *Repository {
 }
 
 func (r *Repository) Upsert(ctx context.Context, m segment.Membership) error {
-	score := float64(m.TaggedAt.UTC().UnixNano())
-	return r.client.ZAdd(ctx, key(m.Segment), goredis.Z{
-		Score:  score,
-		Member: m.UserID,
+	// GT: never let a stale outbox replay regress taggedAt after a newer write.
+	return r.client.ZAddArgs(ctx, key(m.Segment), goredis.ZAddArgs{
+		GT: true,
+		Members: []goredis.Z{{
+			Score:  float64(m.TaggedAt.UTC().UnixNano()),
+			Member: m.UserID,
+		}},
 	}).Err()
 }
 
@@ -58,10 +61,12 @@ func (r *Repository) UpsertBatch(ctx context.Context, ms []segment.Membership) [
 	pipe := p.Pipeline()
 	cmds := make([]*goredis.IntCmd, len(ms))
 	for i, m := range ms {
-		score := float64(m.TaggedAt.UTC().UnixNano())
-		cmds[i] = pipe.ZAdd(ctx, key(m.Segment), goredis.Z{
-			Score:  score,
-			Member: m.UserID,
+		cmds[i] = pipe.ZAddArgs(ctx, key(m.Segment), goredis.ZAddArgs{
+			GT: true,
+			Members: []goredis.Z{{
+				Score:  float64(m.TaggedAt.UTC().UnixNano()),
+				Member: m.UserID,
+			}},
 		})
 	}
 	_, _ = pipe.Exec(ctx)

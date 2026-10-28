@@ -257,6 +257,22 @@
 - **Evaluation:** Rebuilt and checked the dashboard in the browser.
 - **Fixes:** None.
 
+### Prompt #14
+
+- **Stage:** Code Review / Debugging
+- **Tool:** Cursor (Auto)
+- **Prompt:**
+
+  ```
+  Final check vs the challenge brief. Fix stale outbox overwriting newer Redis scores.
+  For failed async warm just log + TODO for now.
+  Document no-boot-warm and warm-fail trade-offs.
+  ```
+
+- **Result:** Redis `ZADD GT` so older outbox cannot regress `taggedAt`; warm errors logged with a TODO; README “Known trade-offs” for empty Redis on boot and warm-fail→ready.
+- **Evaluation:** New unit test for stale upsert; `go test ./...` green; read the README section myself.
+- **Fixes:** None beyond what I asked — kept warm-fail as log/TODO on purpose, not a full degraded state.
+
 ## 4. Token Usage Monitoring
 
 - **Monitoring method:** Mostly gut feel + Cursor chat length. I did not track exact token bills in a spreadsheet.

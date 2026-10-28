@@ -71,6 +71,34 @@ func TestRepository_Upsert_RefreshesTaggedAt(t *testing.T) {
 	}
 }
 
+func TestRepository_Upsert_IgnoresStaleOlderTaggedAt(t *testing.T) {
+	repo, mr := newTestRepo(t)
+	ctx := context.Background()
+	newer := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
+	older := newer.Add(-time.Hour)
+
+	mustUpsert(t, repo, segment.Membership{UserID: "u1", Segment: "sports", TaggedAt: newer})
+	mustUpsert(t, repo, segment.Membership{UserID: "u1", Segment: "sports", TaggedAt: older})
+
+	score, err := mr.ZScore("segment:sports", "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := float64(newer.UnixNano())
+	if score != want {
+		t.Fatalf("score = %v, want newer %v (stale outbox must not regress)", score, want)
+	}
+
+	// Still active at newer+1h if score stayed at newer (TTL window from newer).
+	got, err := repo.CountActive(ctx, "sports", newer.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 1 {
+		t.Fatalf("CountActive = %d, want 1 with preserved newer score", got)
+	}
+}
+
 func TestRepository_CountActive_EmptySegment(t *testing.T) {
 	repo, _ := newTestRepo(t)
 	got, err := repo.CountActive(context.Background(), "missing", time.Now().UTC())

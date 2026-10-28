@@ -2,6 +2,7 @@ package segment
 
 import (
 	"context"
+	"log"
 	"runtime"
 	"time"
 )
@@ -120,9 +121,14 @@ func (s *Service) Reset(ctx context.Context) error {
 		go func() {
 			defer func() {
 				_ = s.hot.AfterWarm(context.Background())
+				// TODO(ops): on warm failure keep status=resetting (or a dedicated
+				// degraded state) instead of MarkReady, so estimate cannot return
+				// undercounts with HTTP 200. For now we only log and become ready.
 				s.ready.MarkReady()
 			}()
-			_ = s.hot.WarmFromSource(context.Background(), s.clock.Now())
+			if err := s.hot.WarmFromSource(context.Background(), s.clock.Now()); err != nil {
+				log.Printf("async warm failed (system marked ready anyway; see TODO): %v", err)
+			}
 		}()
 		return nil
 	}
