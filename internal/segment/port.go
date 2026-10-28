@@ -33,10 +33,21 @@ type StoreStatser interface {
 	Stats(ctx context.Context) (StoreStats, error)
 }
 
+// ProductConfig is the product-facing runtime settings shown on the health dashboard.
+type ProductConfig struct {
+	Store              string
+	MembershipTTL      string // e.g. "14d" or "3h0m0s"
+	OutboxBatchSize    int
+	OutboxPollInterval string
+	WarmPageSize       int
+	CleanupRetention   string
+}
+
 // HealthInfo is returned by the health use case (HTTP maps it to JSON/HTML).
 type HealthInfo struct {
 	Status     string
 	Store      string
+	Product    ProductConfig
 	Hot        StoreStats
 	Uptime     time.Duration
 	GoRoutines int

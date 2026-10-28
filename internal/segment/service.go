@@ -14,6 +14,7 @@ type Service struct {
 	hot       HotStoreControl
 	stats     StoreStatser
 	storeName string
+	product   ProductConfig
 	startedAt time.Time
 }
 
@@ -26,8 +27,18 @@ func NewService(repo Repository, clock Clock, ready *Readiness, hot HotStoreCont
 		hot:       hot,
 		stats:     stats,
 		storeName: storeName,
+		product:   ProductConfig{Store: storeName},
 		startedAt: time.Now(),
 	}
+}
+
+// WithProduct attaches product config shown on the health dashboard.
+func (s *Service) WithProduct(p ProductConfig) *Service {
+	if p.Store == "" {
+		p.Store = s.storeName
+	}
+	s.product = p
+	return s
 }
 
 var (
@@ -59,6 +70,7 @@ func (s *Service) Health(ctx context.Context) HealthInfo {
 	info := HealthInfo{
 		Status:     s.ready.Status(),
 		Store:      s.storeName,
+		Product:    s.product,
 		Uptime:     time.Since(s.startedAt),
 		GoRoutines: runtime.NumGoroutine(),
 	}

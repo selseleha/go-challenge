@@ -227,6 +227,36 @@
 - **Evaluation:** Opened `/v1/health` in the browser and watched numbers/charts update.
 - **Fixes:** None.
 
+### Prompt #12
+
+- **Stage:** Implementation
+- **Tool:** Cursor (Auto)
+- **Prompt:**
+
+  ```
+  Clean up processed outbox rows on a schedule.
+  Also warm after reset page-by-page so millions of rows are not loaded into one Go slice.
+  ```
+
+- **Result:** Outbox cleaner worker + `ListActivePage` keyset warm; config for cleanup/warm page size.
+- **Evaluation:** Ran tests; thought about 4M warm — default page 5k felt slow so I bumped it to 50k.
+- **Fixes:** Raised `WARM_PAGE_SIZE` default and Redis write chunk after checking the math for millions.
+
+### Prompt #13
+
+- **Stage:** Implementation
+- **Tool:** Cursor (Auto)
+- **Prompt:**
+
+  ```
+  Make the health top row four fixed columns.
+  Fourth column: product config (store type, membership TTL, outbox/warm settings).
+  ```
+
+- **Result:** Product config on health JSON + HTML fourth card (store, TTL, outbox batch/poll, warm page, cleanup keep).
+- **Evaluation:** Rebuilt and checked the dashboard in the browser.
+- **Fixes:** None.
+
 ## 4. Token Usage Monitoring
 
 - **Monitoring method:** Mostly gut feel + Cursor chat length. I did not track exact token bills in a spreadsheet.

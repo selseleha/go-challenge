@@ -22,15 +22,23 @@ type RedisCache interface {
 // Repository implements segment.Repository: Postgres is source of truth,
 // Redis is the hot estimate cache filled via transactional outbox.
 type Repository struct {
-	store  *postgres.Store
-	cache  RedisCache
-	ttl    time.Duration
-	worker *Worker
+	store    *postgres.Store
+	cache    RedisCache
+	ttl      time.Duration
+	warmPage int
+	worker   *Worker
 }
 
 // NewRepository wires Postgres + Redis behind the segment.Repository port.
 func NewRepository(store *postgres.Store, cache RedisCache, ttl time.Duration) *Repository {
-	return &Repository{store: store, cache: cache, ttl: ttl}
+	return &Repository{store: store, cache: cache, ttl: ttl, warmPage: 50000}
+}
+
+// SetWarmPageSize controls how many memberships are loaded per warm SQL page.
+func (r *Repository) SetWarmPageSize(n int) {
+	if n > 0 {
+		r.warmPage = n
+	}
 }
 
 // SetWorker attaches the outbox worker so reset can pause/resume it safely.
@@ -75,28 +83,13 @@ func (r *Repository) AfterWarm(context.Context) error {
 	return nil
 }
 
-// WarmFromSource reloads active memberships from Postgres into Redis.
+// WarmFromSource reloads active memberships from Postgres into Redis page-by-page.
 func (r *Repository) WarmFromSource(ctx context.Context, now time.Time) error {
-	active, err := r.store.ListActive(ctx, now, r.ttl)
+	n, err := warmPages(ctx, r.store, r.cache, now, r.ttl, r.warmPage)
 	if err != nil {
-		return fmt.Errorf("list active: %w", err)
+		return err
 	}
-	const warmChunk = 1000
-	for i := 0; i < len(active); i += warmChunk {
-		end := i + warmChunk
-		if end > len(active) {
-			end = len(active)
-		}
-		chunk := active[i:end]
-		errs := r.cache.UpsertBatch(ctx, chunk)
-		for j, err := range errs {
-			if err != nil {
-				m := chunk[j]
-				return fmt.Errorf("warm upsert %s/%s: %w", m.Segment, m.UserID, err)
-			}
-		}
-	}
-	log.Printf("redis: warmed %d active memberships from postgres", len(active))
+	log.Printf("redis: warmed %d active memberships from postgres (page=%d)", n, r.warmPage)
 	return nil
 }
 

@@ -23,3 +23,8 @@ CREATE TABLE IF NOT EXISTS outbox (
 CREATE INDEX IF NOT EXISTS outbox_claim_idx
     ON outbox (available_at)
     WHERE processed_at IS NULL;
+
+-- Cleanup of processed outbox rows (retention worker).
+CREATE INDEX IF NOT EXISTS outbox_processed_at_idx
+    ON outbox (processed_at)
+    WHERE processed_at IS NOT NULL;

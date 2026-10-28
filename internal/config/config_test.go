@@ -13,7 +13,9 @@ func clearStoreEnv(t *testing.T) {
 		"HTTP_ADDR", "GRPC_ADDR", "STORE", "REDIS_ADDR", "DATABASE_URL",
 		"MEMBERSHIP_TTL", "ADMIN_TOKEN",
 		"OUTBOX_POLL_INTERVAL", "OUTBOX_BATCH_SIZE",
-		"USS_GRPC_ADDR", "USS_WORKERS", "USS_EVENTS",
+		"OUTBOX_CLEANUP_INTERVAL", "OUTBOX_CLEANUP_RETENTION", "OUTBOX_CLEANUP_BATCH",
+		"WARM_PAGE_SIZE",
+		"USS_GRPC_ADDR", "USS_WORKERS", "USS_EVENTS", "USS_TIMEOUT",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
@@ -41,6 +43,12 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.OutboxPollInterval != 100*time.Millisecond {
 		t.Fatalf("OutboxPollInterval = %v", cfg.OutboxPollInterval)
+	}
+	if cfg.OutboxCleanupInterval != time.Minute || cfg.OutboxCleanupRetention != 15*time.Minute {
+		t.Fatalf("cleanup interval/retention = %v/%v", cfg.OutboxCleanupInterval, cfg.OutboxCleanupRetention)
+	}
+	if cfg.OutboxCleanupBatch != 10000 || cfg.WarmPageSize != 50000 {
+		t.Fatalf("cleanupBatch=%d warmPage=%d", cfg.OutboxCleanupBatch, cfg.WarmPageSize)
 	}
 }
 

@@ -20,8 +20,12 @@ type Config struct {
 	MembershipTTL time.Duration
 	AdminToken    string
 
-	OutboxPollInterval time.Duration
-	OutboxBatchSize    int
+	OutboxPollInterval     time.Duration
+	OutboxBatchSize        int
+	OutboxCleanupInterval  time.Duration
+	OutboxCleanupRetention time.Duration
+	OutboxCleanupBatch     int
+	WarmPageSize           int
 
 	USSGRPCAddr string
 	USSWorkers  int
@@ -62,21 +66,41 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("USS_TIMEOUT: %w", err)
 	}
+	cleanupEvery, err := parseDuration(envOr("OUTBOX_CLEANUP_INTERVAL", "1m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("OUTBOX_CLEANUP_INTERVAL: %w", err)
+	}
+	cleanupKeep, err := parseDuration(envOr("OUTBOX_CLEANUP_RETENTION", "15m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("OUTBOX_CLEANUP_RETENTION: %w", err)
+	}
+	cleanupBatch, err := envInt("OUTBOX_CLEANUP_BATCH", 10000)
+	if err != nil {
+		return Config{}, fmt.Errorf("OUTBOX_CLEANUP_BATCH: %w", err)
+	}
+	warmPage, err := envInt("WARM_PAGE_SIZE", 50000)
+	if err != nil {
+		return Config{}, fmt.Errorf("WARM_PAGE_SIZE: %w", err)
+	}
 
 	cfg := Config{
-		HTTPAddr:           envOr("HTTP_ADDR", ":8080"),
-		GRPCAddr:           envOr("GRPC_ADDR", ":9090"),
-		Store:              strings.ToLower(envOr("STORE", "memory")),
-		RedisAddr:          envOr("REDIS_ADDR", "localhost:6379"),
-		DatabaseURL:        envOr("DATABASE_URL", ""),
-		MembershipTTL:      ttl,
-		AdminToken:         envOr("ADMIN_TOKEN", "dev-admin-token"),
-		OutboxPollInterval: poll,
-		OutboxBatchSize:    batch,
-		USSGRPCAddr:        dialAddr(envOr("USS_GRPC_ADDR", envOr("GRPC_ADDR", "localhost:9090"))),
-		USSWorkers:         workers,
-		USSEvents:          events,
-		USSTimeout:         ussTimeout,
+		HTTPAddr:               envOr("HTTP_ADDR", ":8080"),
+		GRPCAddr:               envOr("GRPC_ADDR", ":9090"),
+		Store:                  strings.ToLower(envOr("STORE", "memory")),
+		RedisAddr:              envOr("REDIS_ADDR", "localhost:6379"),
+		DatabaseURL:            envOr("DATABASE_URL", ""),
+		MembershipTTL:          ttl,
+		AdminToken:             envOr("ADMIN_TOKEN", "dev-admin-token"),
+		OutboxPollInterval:     poll,
+		OutboxBatchSize:        batch,
+		OutboxCleanupInterval:  cleanupEvery,
+		OutboxCleanupRetention: cleanupKeep,
+		OutboxCleanupBatch:     cleanupBatch,
+		WarmPageSize:           warmPage,
+		USSGRPCAddr:            dialAddr(envOr("USS_GRPC_ADDR", envOr("GRPC_ADDR", "localhost:9090"))),
+		USSWorkers:             workers,
+		USSEvents:              events,
+		USSTimeout:             ussTimeout,
 	}
 
 	switch cfg.Store {

@@ -107,6 +107,15 @@ var healthPage = template.Must(template.New("health").Funcs(template.FuncMap{
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 1rem;
   }
+  .top4 {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  @media (max-width: 1100px) {
+    .top4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
   .card {
     background: color-mix(in srgb, var(--panel) 92%, black);
     border: 1px solid var(--line);
@@ -171,7 +180,7 @@ var healthPage = template.Must(template.New("health").Funcs(template.FuncMap{
     </div>
   </header>
 
-  <div class="grid">
+  <div class="top4">
     <section class="card">
       <h2>Postgres (source)</h2>
       <div class="metric" style="color:var(--pg)"><span id="pgCount">{{if .Hot.HasSource}}{{fmtInt .Hot.SourceMembers}}{{else}}—{{end}}</span>
@@ -196,6 +205,20 @@ var healthPage = template.Must(template.New("health").Funcs(template.FuncMap{
       <div class="row"><span class="k">Heap alloc</span><span class="v" id="alloc">{{fmtFloat .AllocMiB 1}} MiB</span></div>
     </section>
 
+    <section class="card">
+      <h2>Product config</h2>
+      <div class="metric" style="color:var(--accent)"><span id="cfgStore">{{.Product.Store}}</span>
+        <small>active store mode</small>
+      </div>
+      <div class="row"><span class="k">Membership TTL</span><span class="v" id="cfgTTL">{{.Product.MembershipTTL}}</span></div>
+      <div class="row"><span class="k">Outbox batch</span><span class="v" id="cfgOutboxBatch">{{.Product.OutboxBatchSize}}</span></div>
+      <div class="row"><span class="k">Outbox poll</span><span class="v" id="cfgOutboxPoll">{{.Product.OutboxPollInterval}}</span></div>
+      <div class="row"><span class="k">Warm page</span><span class="v" id="cfgWarmPage">{{.Product.WarmPageSize}}</span></div>
+      <div class="row"><span class="k">Outbox keep</span><span class="v" id="cfgCleanup">{{.Product.CleanupRetention}}</span></div>
+    </section>
+  </div>
+
+  <div class="grid">
     <section class="card wide">
       <h2>Segment estimates (live API)</h2>
       <canvas id="bars" width="1000" height="280"></canvas>
@@ -339,6 +362,14 @@ var healthPage = template.Must(template.New("health").Funcs(template.FuncMap{
       document.getElementById("uptime").textContent = fmtDur(h.uptime_sec);
       document.getElementById("goroutines").textContent = h.goroutines;
       document.getElementById("alloc").textContent = (h.alloc_mib || 0).toFixed(1) + " MiB";
+
+      const p = h.product || {};
+      document.getElementById("cfgStore").textContent = p.store || h.store || "—";
+      document.getElementById("cfgTTL").textContent = p.membership_ttl || "—";
+      document.getElementById("cfgOutboxBatch").textContent = p.outbox_batch_size != null ? p.outbox_batch_size : "—";
+      document.getElementById("cfgOutboxPoll").textContent = p.outbox_poll_interval || "—";
+      document.getElementById("cfgWarmPage").textContent = p.warm_page_size != null ? p.warm_page_size : "—";
+      document.getElementById("cfgCleanup").textContent = p.cleanup_retention || "—";
 
       history.t.push(Date.now());
       history.pg.push(hasSource ? (hot.source_members || 0) : null);

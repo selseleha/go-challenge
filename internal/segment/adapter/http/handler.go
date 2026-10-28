@@ -64,7 +64,15 @@ type healthResponse struct {
 	SysMiB     float64 `json:"sys_mib"`
 	NumGC      uint32  `json:"num_gc"`
 	ProbeMS    float64 `json:"probe_ms"`
-	Hot        struct {
+	Product    struct {
+		Store              string `json:"store"`
+		MembershipTTL      string `json:"membership_ttl"`
+		OutboxBatchSize    int    `json:"outbox_batch_size"`
+		OutboxPollInterval string `json:"outbox_poll_interval"`
+		WarmPageSize       int    `json:"warm_page_size"`
+		CleanupRetention   string `json:"cleanup_retention"`
+	} `json:"product"`
+	Hot struct {
 		Kind          string   `json:"kind"`
 		OK            bool     `json:"ok"`
 		LatencyMS     float64  `json:"latency_ms"`
@@ -129,6 +137,12 @@ func toHealthResponse(info segment.HealthInfo) healthResponse {
 		NumGC:      info.NumGC,
 		ProbeMS:    info.ProbeMS,
 	}
+	resp.Product.Store = info.Product.Store
+	resp.Product.MembershipTTL = info.Product.MembershipTTL
+	resp.Product.OutboxBatchSize = info.Product.OutboxBatchSize
+	resp.Product.OutboxPollInterval = info.Product.OutboxPollInterval
+	resp.Product.WarmPageSize = info.Product.WarmPageSize
+	resp.Product.CleanupRetention = info.Product.CleanupRetention
 	resp.Hot.Kind = info.Hot.Kind
 	resp.Hot.OK = info.Hot.OK
 	resp.Hot.LatencyMS = info.Hot.LatencyMS

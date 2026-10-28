@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 
@@ -29,7 +30,7 @@ func wireApp(ctx context.Context, cfg config.Config) (appBundle, error) {
 		repo := memory.NewRepository(cfg.MembershipTTL)
 		log.Print("store: memory")
 		return appBundle{
-			Service: segment.NewService(repo, segment.SystemClock{}, ready, repo, repo, cfg.Store),
+			Service: newSegmentService(repo, ready, repo, repo, cfg),
 			Cleanup: func() {},
 		}, nil
 
@@ -40,7 +41,7 @@ func wireApp(ctx context.Context, cfg config.Config) (appBundle, error) {
 		}
 		log.Printf("store: redis (%s)", cfg.RedisAddr)
 		return appBundle{
-			Service: segment.NewService(cache, segment.SystemClock{}, ready, cache, cache, cfg.Store),
+			Service: newSegmentService(cache, ready, cache, cache, cfg),
 			Cleanup: func() { _ = client.Close() },
 		}, nil
 
@@ -55,13 +56,22 @@ func wireApp(ctx context.Context, cfg config.Config) (appBundle, error) {
 			return appBundle{}, err
 		}
 		repo := postgresredis.NewRepository(store, cache, cfg.MembershipTTL)
+		repo.SetWarmPageSize(cfg.WarmPageSize)
 		worker := postgresredis.NewWorker(store, cache, cfg.OutboxPollInterval, cfg.OutboxBatchSize)
 		repo.SetWorker(worker)
 		go worker.Run(ctx)
-		log.Printf("store: postgres_redis (db + redis=%s, outbox batch=%d every %s)",
-			cfg.RedisAddr, cfg.OutboxBatchSize, cfg.OutboxPollInterval)
+		cleaner := postgresredis.NewCleaner(
+			store,
+			cfg.OutboxCleanupInterval,
+			cfg.OutboxCleanupRetention,
+			cfg.OutboxCleanupBatch,
+		)
+		go cleaner.Run(ctx)
+		log.Printf("store: postgres_redis (db + redis=%s, outbox batch=%d every %s, cleanup every %s keep %s, warm page=%d)",
+			cfg.RedisAddr, cfg.OutboxBatchSize, cfg.OutboxPollInterval,
+			cfg.OutboxCleanupInterval, cfg.OutboxCleanupRetention, cfg.WarmPageSize)
 		return appBundle{
-			Service: segment.NewService(repo, segment.SystemClock{}, ready, repo, repo, cfg.Store),
+			Service: newSegmentService(repo, ready, repo, repo, cfg),
 			Cleanup: func() {
 				store.Close()
 				_ = client.Close()
@@ -71,6 +81,31 @@ func wireApp(ctx context.Context, cfg config.Config) (appBundle, error) {
 	default:
 		return appBundle{}, fmt.Errorf("unknown STORE %q", cfg.Store)
 	}
+}
+
+func newSegmentService(
+	repo segment.Repository,
+	ready *segment.Readiness,
+	hot segment.HotStoreControl,
+	stats segment.StoreStatser,
+	cfg config.Config,
+) *segment.Service {
+	return segment.NewService(repo, segment.SystemClock{}, ready, hot, stats, cfg.Store).WithProduct(segment.ProductConfig{
+		Store:              cfg.Store,
+		MembershipTTL:      formatTTL(cfg.MembershipTTL),
+		OutboxBatchSize:    cfg.OutboxBatchSize,
+		OutboxPollInterval: cfg.OutboxPollInterval.String(),
+		WarmPageSize:       cfg.WarmPageSize,
+		CleanupRetention:   cfg.OutboxCleanupRetention.String(),
+	})
+}
+
+func formatTTL(d time.Duration) string {
+	day := 24 * time.Hour
+	if d >= day && d%day == 0 {
+		return fmt.Sprintf("%dd", int(d/day))
+	}
+	return d.String()
 }
 
 func openRedisCache(ctx context.Context, cfg config.Config) (*goredis.Client, *segmentredis.Repository, error) {

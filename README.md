@@ -57,6 +57,10 @@ See [`.env.example`](./.env.example). Important keys:
 | `ADMIN_TOKEN` | `dev-admin-token` | Token for `POST /v1/admin/reset` |
 | `OUTBOX_POLL_INTERVAL` | `100ms` | Outbox → Redis poll when idle (busy drain skips wait) |
 | `OUTBOX_BATCH_SIZE` | `1000` | Outbox claim batch size |
+| `OUTBOX_CLEANUP_INTERVAL` | `1m` | How often to delete processed outbox rows |
+| `OUTBOX_CLEANUP_RETENTION` | `15m` | Keep processed outbox rows at least this long |
+| `OUTBOX_CLEANUP_BATCH` | `10000` | Max processed rows deleted per cleanup tick |
+| `WARM_PAGE_SIZE` | `50000` | Memberships loaded per SQL page during admin reset warm |
 | `USS_GRPC_ADDR` | `localhost:9090` | Where `cmd/uss` dials |
 | `USS_WORKERS` | `8` | Concurrent USS workers |
 | `USS_EVENTS` | `1000` | How many ingest RPCs to send |
@@ -146,7 +150,8 @@ Membership rule: active while `now - taggedAt < TTL`. Re-ingest of the same user
 - **Ingest:** O(1)/O(log n) upserts to Redis; Postgres upsert by primary key.
 - **Indexes we rely on:** `(user_id, segment)` PK; `(segment, tagged_at DESC)` for SQL count/warm; partial outbox index for claims.
 - **Sharding:** not needed now. If Postgres history becomes huge, partition by `segment` or time and/or prune expired memberships; Redis can move to Cluster with hash-tagged keys later.
-- **Ops gap to remember:** delete processed outbox rows on a schedule so the table does not grow forever.
+- **Outbox retention:** in-process cleaner deletes processed rows older than `OUTBOX_CLEANUP_RETENTION` in batches.
+- **Reset warm:** keyset-paged `ListActivePage` + Redis pipelines — does not load all active rows into one Go slice.
 
 ## Layout
 

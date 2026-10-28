@@ -87,20 +87,42 @@ func (s *Store) UpsertWithOutbox(ctx context.Context, m segment.Membership) erro
 	return tx.Commit(ctx)
 }
 
-// ListActive returns memberships still inside ttl at now (for Redis warm-up).
-func (s *Store) ListActive(ctx context.Context, now time.Time, ttl time.Duration) ([]segment.Membership, error) {
-	minTagged := now.Add(-ttl)
-	rows, err := s.pool.Query(ctx, `
-		SELECT user_id, segment, tagged_at
-		FROM memberships
-		WHERE tagged_at > $1
-	`, minTagged.UTC())
+// ListActivePage returns up to limit active memberships after (afterUser, afterSegment)
+// ordered by primary key. Empty after* starts from the beginning. Used for streaming warm.
+func (s *Store) ListActivePage(ctx context.Context, now time.Time, ttl time.Duration, afterUser, afterSegment string, limit int) ([]segment.Membership, error) {
+	if limit <= 0 {
+		limit = 50000
+	}
+	minTagged := now.Add(-ttl).UTC()
+
+	var (
+		rows pgxRows
+		err  error
+	)
+	if afterUser == "" && afterSegment == "" {
+		rows, err = s.pool.Query(ctx, `
+			SELECT user_id, segment, tagged_at
+			FROM memberships
+			WHERE tagged_at > $1
+			ORDER BY user_id, segment
+			LIMIT $2
+		`, minTagged, limit)
+	} else {
+		rows, err = s.pool.Query(ctx, `
+			SELECT user_id, segment, tagged_at
+			FROM memberships
+			WHERE tagged_at > $1
+			  AND (user_id, segment) > ($2, $3)
+			ORDER BY user_id, segment
+			LIMIT $4
+		`, minTagged, afterUser, afterSegment, limit)
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var out []segment.Membership
+	out := make([]segment.Membership, 0, limit)
 	for rows.Next() {
 		var m segment.Membership
 		if err := rows.Scan(&m.UserID, &m.Segment, &m.TaggedAt); err != nil {
@@ -109,6 +131,38 @@ func (s *Store) ListActive(ctx context.Context, now time.Time, ttl time.Duration
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// pgxRows is the small surface we need from pgxpool.Query (keeps ListActivePage readable).
+type pgxRows interface {
+	Next() bool
+	Scan(dest ...any) error
+	Err() error
+	Close()
+}
+
+// DeleteProcessedOutbox removes processed outbox rows older than olderThan (batch limited).
+func (s *Store) DeleteProcessedOutbox(ctx context.Context, olderThan time.Time, limit int) (int64, error) {
+	if limit <= 0 {
+		limit = 10000
+	}
+	tag, err := s.pool.Exec(ctx, `
+		WITH doomed AS (
+			SELECT id
+			FROM outbox
+			WHERE processed_at IS NOT NULL
+			  AND processed_at < $1
+			ORDER BY id
+			LIMIT $2
+		)
+		DELETE FROM outbox o
+		USING doomed d
+		WHERE o.id = d.id
+	`, olderThan.UTC(), limit)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // CountAll returns total rows in memberships (including expired).

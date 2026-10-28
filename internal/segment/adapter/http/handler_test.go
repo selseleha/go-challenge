@@ -135,6 +135,9 @@ func TestHandler_Health_Ready(t *testing.T) {
 	if !strings.Contains(body, `"source_members":12`) || !strings.Contains(body, `"sports"`) {
 		t.Fatalf("health json = %s", body)
 	}
+	if !strings.Contains(body, `"product"`) {
+		t.Fatalf("expected product in health json: %s", body)
+	}
 }
 
 func TestHandler_Health_HTMLForBrowsers(t *testing.T) {
